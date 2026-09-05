@@ -1,0 +1,177 @@
+#!/bin/bash
+# org-upwell resident watcher (macOS).
+#
+# This Mac has no Microsoft Office; the documents in front here are
+# Numbers, Pages, Keynote, Notes, Preview, TextEdit, Finder, and the
+# browsers.  Excel / PowerPoint / Word are still recognised if present.
+#
+# Usage:
+#   org-upwell-watch.macos [OUTDIR]
+#
+# OUTDIR defaults to ~/.local/share/org-upwell.
+# Every poll rewrites front.json, even when there is no path -- that is
+# how to see whether the job is alive without waiting for a file.
+
+set -eu
+OUTDIR="${1:-$HOME/.local/share/org-upwell}"
+INTERVAL=15
+DOWNLOADS="${HOME}/Downloads"
+LAST_FRONT=""
+LAST_DL_EPOCH=$(date +%s)
+mkdir -p "$OUTDIR"
+
+jxa_front() {
+  osascript -l JavaScript <<'JXA' 2>>"$OUTDIR/watch.err" || true
+function run() {
+  var out = {ts: Math.floor(Date.now() / 1000),
+             app: "", title: "", path: "", url: "", kind: "file",
+             error: ""};
+  function posix(u) {
+    if (!u) return "";
+    return decodeURI(String(u)).replace(/^file:\/\/localhost/, "").replace(/^file:\/\//, "");
+  }
+  function canon(name) {
+    var map = {"メモ": "Notes", "プレビュー": "Preview",
+               "テキストエディット": "TextEdit", "ファインダ": "Finder"};
+    return map[name] || name;
+  }
+  function docPath(appName) {
+    try {
+      var docs = Application(appName).documents;
+      if (!docs.length) return "";
+      try { return docs[0].path(); } catch (e1) {
+        try { return posix(docs[0].url()); } catch (e2) { return ""; }
+      }
+    } catch (e) { return ""; }
+  }
+  try {
+    var se = Application("System Events");
+    var procs = se.applicationProcesses.whose({frontmost: true});
+    if (!procs.length) {
+      out.error = "no front process";
+      return JSON.stringify(out);
+    }
+    var proc = procs[0];
+    var name = canon(proc.name());
+    out.app = name;
+    try { out.title = proc.windows[0].name(); } catch (e) {}
+
+    if (name === "Numbers" || name === "Pages" || name === "Keynote"
+        || name === "Preview" || name === "TextEdit") {
+      out.path = docPath(name);
+    } else if (name === "Microsoft Excel") {
+      try { out.path = Application("Microsoft Excel").activeWorkbook.fullName(); }
+      catch (e) { out.error = String(e); }
+    } else if (name === "Microsoft PowerPoint") {
+      try { out.path = Application("Microsoft PowerPoint").activePresentation.fullName(); }
+      catch (e) { out.error = String(e); }
+    } else if (name === "Microsoft Word") {
+      try { out.path = Application("Microsoft Word").activeDocument.fullName(); }
+      catch (e) { out.error = String(e); }
+    } else if (name === "Safari") {
+      try {
+        var tab = Application("Safari").windows[0].currentTab;
+        out.url = tab.url();
+        out.title = tab.name();
+        out.kind = "url";
+      } catch (e) { out.error = String(e); }
+    } else if (name === "Google Chrome") {
+      try {
+        var ctab = Application("Google Chrome").windows[0].activeTab;
+        out.url = ctab.url();
+        out.title = ctab.title();
+        out.kind = "url";
+      } catch (e) { out.error = String(e); }
+    } else if (name === "Microsoft Edge") {
+      try {
+        var etab = Application("Microsoft Edge").windows[0].activeTab;
+        out.url = etab.url();
+        out.title = etab.title();
+        out.kind = "url";
+      } catch (e) { out.error = String(e); }
+    } else if (name === "Notes") {
+      // Notes has no file.  The window title is the note; keep it as a
+      // URL so it can still be claimed.
+      out.kind = "note";
+      if (out.title) out.url = "notes:" + encodeURIComponent(out.title);
+    } else if (name === "Finder") {
+      try {
+        var finder = Application("Finder");
+        var sel = finder.selection();
+        if (sel.length) {
+          out.path = posix(sel[0].url());
+        } else {
+          out.path = posix(finder.windows[0].target().url());
+          out.kind = "dir";
+        }
+      } catch (e) { out.error = String(e); }
+    }
+
+    if (out.path && /^https?:\/\//.test(out.path)) {
+      out.url = out.path;
+      out.path = "";
+      out.kind = "url";
+    }
+  } catch (e) {
+    out.error = String(e);
+  }
+  return JSON.stringify(out);
+}
+JXA
+}
+
+write_status() {
+  printf '%s\n' "$1" > "$OUTDIR/front.json"
+}
+
+append_line() {
+  local line="$1"
+  local day
+  day=$(date +%Y-%m-%d)
+  printf '%s\n' "$line" >> "$OUTDIR/trace-$day.jsonl"
+}
+
+scan_downloads() {
+  local now f
+  now=$(date +%s)
+  [ -d "$DOWNLOADS" ] || return 0
+  while IFS= read -r f; do
+    case "$f" in
+      *.tmp|*.crdownload|*.partial|*.download) continue ;;
+    esac
+    python3 -c "
+import json, os, sys
+p = sys.argv[1]
+print(json.dumps({
+  'ts': int(sys.argv[2]),
+  'app': 'Downloads',
+  'title': os.path.basename(p),
+  'path': p,
+  'url': '',
+  'kind': 'file'
+}))
+" "$f" "$now"
+  done < <(find "$DOWNLOADS" -maxdepth 1 -type f -newermt "@$LAST_DL_EPOCH" 2>/dev/null)
+  LAST_DL_EPOCH=$now
+}
+
+while true; do
+  line=$(jxa_front)
+  [ -n "${line:-}" ] && write_status "$line"
+  payload=$(python3 -c "
+import json,sys
+try:
+    o=json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+print(o.get('path') or o.get('url') or '')
+" "${line:-}" 2>/dev/null || true)
+  if [ -n "${payload:-}" ] && [ "$payload" != "$LAST_FRONT" ]; then
+    LAST_FRONT="$payload"
+    append_line "$line"
+  fi
+  scan_downloads | while IFS= read -r dl; do
+    [ -n "$dl" ] && append_line "$dl"
+  done
+  sleep "$INTERVAL"
+done

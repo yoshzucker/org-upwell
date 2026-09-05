@@ -1,0 +1,115 @@
+#!/bin/bash
+# Install org-upwell-watch as a LaunchAgent for the current user.
+#
+# The job is a tiny .app, not a bare bash script.  Automation permission
+# is attributed to the responsible process: a LaunchAgent running
+# /bin/bash is attributed to bash, which has no usage string, so macOS
+# refuses without a prompt -- the same hole org-calsync hit.  A bundle
+# with NSAppleEventsUsageDescription can be asked, and appears in
+# System Settings under its own name.
+#
+#   bash ~/Developer/org-upwell/script/install-launchagent.macos
+#
+# Re-run after moving the package.  The first Numbers / Notes / Finder /
+# Safari capture should raise the dialog; grant it.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WATCH="$ROOT/script/org-upwell-watch.macos"
+OUT="${HOME}/.local/share/org-upwell"
+APP="${OUT}/org-upwell-watch.app"
+BIN="${APP}/Contents/MacOS/org-upwell-watch"
+PLIST="${HOME}/Library/LaunchAgents/org.upwell.watch.plist"
+LABEL="org.upwell.watch"
+UID_NUM="$(id -u)"
+DOMAIN="gui/${UID_NUM}"
+
+if [ ! -f "$WATCH" ]; then
+  echo "watcher not found: $WATCH" >&2
+  exit 1
+fi
+chmod +x "$WATCH"
+
+mkdir -p "$OUT" "${HOME}/Library/LaunchAgents" "$(dirname "$BIN")"
+
+cat > "${APP}/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>org.upwell.watch</string>
+  <key>CFBundleName</key>
+  <string>org-upwell-watch</string>
+  <key>CFBundleExecutable</key>
+  <string>org-upwell-watch</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>org-upwell records which document is in front (Numbers, Notes, Finder, Safari) so it can be claimed to an Org heading.</string>
+</dict>
+</plist>
+EOF
+
+cat > "$BIN" <<EOF
+#!/bin/bash
+exec /bin/bash $(printf '%q' "$WATCH") $(printf '%q' "$OUT")
+EOF
+chmod +x "$BIN"
+
+if command -v codesign >/dev/null 2>&1; then
+  codesign --force --deep -s - "$APP" >/dev/null 2>&1 || true
+fi
+
+cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${BIN}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${OUT}/watch.log</string>
+  <key>StandardErrorPath</key>
+  <string>${OUT}/watch.err</string>
+</dict>
+</plist>
+EOF
+
+if launchctl print "${DOMAIN}/${LABEL}" >/dev/null 2>&1; then
+  launchctl bootout "${DOMAIN}/${LABEL}" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
+fi
+
+if launchctl bootstrap "${DOMAIN}" "$PLIST" 2>/dev/null; then
+  launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
+else
+  launchctl load -w "$PLIST"
+fi
+
+echo "installed ${PLIST}"
+echo "app      ${APP}"
+echo "traces   ${OUT}/trace-YYYY-MM-DD.jsonl"
+echo "status   ${OUT}/front.json   (rewritten every 15s; cat this to see the front app)"
+echo
+echo "Bring Numbers, Notes, Finder or Safari to the front.  The first"
+echo "control of each app should prompt; grant it to org-upwell-watch."
+echo
+echo "If nothing is asked, look at ${OUT}/front.json -- an \"error\""
+echo "field there is the refusal, and System Settings → Privacy &"
+echo "Security → Automation is where to grant it by hand."
+echo
+echo "Stop:  launchctl bootout ${DOMAIN}/${LABEL}"
+echo "Start: bash $0"

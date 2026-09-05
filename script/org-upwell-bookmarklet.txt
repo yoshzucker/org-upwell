@@ -1,0 +1,1 @@
+javascript:location.href='org-protocol://upwell?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)
