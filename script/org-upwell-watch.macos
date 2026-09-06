@@ -30,6 +30,10 @@ function run() {
     if (!u) return "";
     return decodeURI(String(u)).replace(/^file:\/\/localhost/, "").replace(/^file:\/\//, "");
   }
+  // System Events reports the app under its *localized* name, while the
+  // scripting bridge below wants the canonical one.  Add a row per app for
+  // your language; anything not listed passes through unchanged, which is
+  // already correct on an English system.
   function canon(name) {
     var map = {"メモ": "Notes", "プレビュー": "Preview",
                "テキストエディット": "TextEdit", "ファインダ": "Finder"};

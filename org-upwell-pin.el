@@ -173,11 +173,20 @@ The first two pin.  The third expands a heading by org-id."
                  :protocol "upwell"
                  :function org-upwell-protocol)))
 
+(defcustom org-upwell-create-directory "~/Documents/upwell/"
+  "Where `org-upwell-create' puts a new file.
+
+Overridden per heading by the `:UPWELL_DIR:' property.  Asking for a
+location every time is the ritual this command exists to stop, so there
+is a default rather than a prompt."
+  :type 'directory
+  :group 'org-upwell)
+
 (defun org-upwell-create (kind)
   "Create a new file of KIND and claim it to the heading at point.
 
 KIND is `xlsx', `pptx', `docx', `md' or `txt'.  The location is not
-asked: `:UPWELL_DIR:' on the heading, else `~/Documents/upwell/'."
+asked: `:UPWELL_DIR:' on the heading, else `org-upwell-create-directory'."
   (interactive
    (list (intern (completing-read "Create: " '("xlsx" "pptx" "docx" "md" "txt")
                                   nil t))))
@@ -189,7 +198,7 @@ asked: `:UPWELL_DIR:' on the heading, else `~/Documents/upwell/'."
                     (let ((d (org-entry-get (point) "UPWELL_DIR" t)))
                       (and d (file-directory-p (expand-file-name d))
                            (expand-file-name d))))
-                  (expand-file-name "upwell" (expand-file-name "~/Documents"))))
+                  (expand-file-name org-upwell-create-directory)))
          (name (format "%s-%s.%s"
                        (replace-regexp-in-string "[/\\\\:]" "-" title)
                        (format-time-string "%Y%m%d")

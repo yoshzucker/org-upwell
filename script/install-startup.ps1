@@ -4,13 +4,13 @@
   Put a Startup shortcut pointing at org-upwell-watch.ahk.
 
 .DESCRIPTION
-  Does not copy the script.  The .lnk targets this file in the package,
-  so a git pull of org-upwell plus a Windows restart is what picks up a
-  new version -- the same arrangement bootstrap.ps1 uses for
-  remap-windows-keys.ahk.
+  Does not copy the script.  The .lnk targets the .ahk file in the
+  package, so updating org-upwell and logging back in is what picks up a
+  new version.
 
-  Idempotent.  Run once, or let `.\bootstrap.ps1` do it on the next
-  bootstrap/update (Setup-StartupShortcuts also registers this path).
+  Idempotent: a shortcut already pointing at the same target is left
+  alone, so a configuration that installs this on every update may call
+  it as often as it likes.
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\install-startup.ps1

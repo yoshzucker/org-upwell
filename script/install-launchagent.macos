@@ -4,14 +4,13 @@
 # The job is a tiny .app, not a bare bash script.  Automation permission
 # is attributed to the responsible process: a LaunchAgent running
 # /bin/bash is attributed to bash, which has no usage string, so macOS
-# refuses without a prompt -- the same hole org-calsync hit.  A bundle
-# with NSAppleEventsUsageDescription can be asked, and appears in
-# System Settings under its own name.
+# refuses without a prompt.  A bundle with NSAppleEventsUsageDescription
+# can be asked, and appears in System Settings under its own name.
 #
-#   bash ~/Developer/org-upwell/script/install-launchagent.macos
+#   bash script/install-launchagent.macos
 #
-# Re-run after moving the package.  The first Numbers / Notes / Finder /
-# Safari capture should raise the dialog; grant it.
+# Re-run after moving the package.  The first capture should raise the
+# dialog; grant it to this job rather than to Emacs.
 
 set -euo pipefail
 

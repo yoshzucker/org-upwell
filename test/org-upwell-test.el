@@ -204,8 +204,7 @@ a test against the wrong entry is how a C-c v bug hides."
       (let ((m (org-upwell-save (list :path a :name "a.txt"))))
         (make-directory sub t)
         (rename-file a b)
-        (cl-letf (((symbol-function 'org-upwell-search-roots)
-                   (lambda () (list dir))))
+        (let ((org-upwell-search-roots (list dir)))
           (let ((app (org-upwell-resolve (org-upwell-find :id (plist-get m :id)))))
             (should (eq (plist-get app :kind) 'path))
             (should (equal (file-truename (plist-get app :value))
@@ -910,10 +909,15 @@ to a heading nobody has touched since."
 
 ;;;; Small mercies
 
-(ert-deftest org-upwell-test-search-roots-without-org-directory ()
-  "Resolve must not die on a configuration that never set `org-directory'."
-  (let ((org-directory nil))
-    (should (listp (org-upwell-search-roots)))))
+(ert-deftest org-upwell-test-search-roots-skips-what-is-not-there ()
+  "Roots are a setting, and a setting names machines this is not.
+
+A directory that does not exist on this one is dropped rather than
+walked, and a nil in the list must not reach `file-directory-p'."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-search-roots (list dir "~/does-not-exist-org-upwell/" nil)))
+      (should (equal (mapcar #'file-truename (org-upwell--search-roots))
+                     (list (file-truename dir)))))))
 
 (ert-deftest org-upwell-test-enable-dnd-is-idempotent ()
   "The bench redraws on every heading it follows."

@@ -43,7 +43,7 @@
   "Directory of the store, or nil to use `org-directory'.
 
 The demo redirects this rather than `org-directory', so invented files
-never land in the real memex."
+never land among the real ones."
   :type '(choice (const :tag "org-directory" nil) directory)
   :group 'org-upwell)
 

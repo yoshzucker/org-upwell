@@ -4,10 +4,11 @@ Persistent()
 
 ;; org-upwell resident watcher (Windows).
 ;;
-;; Independent of remap-windows-keys.ahk.  A Startup folder .lnk should
-;; point at *this file*, not a copy: git pull then a Windows restart is
-;; what picks up a new version.  script/install-startup.ps1 (and
-;; bootstrap.ps1's Setup-StartupShortcuts) create that shortcut.
+;; Runs on its own, and does not belong inside another AutoHotkey script:
+;; a watcher that shares a process with your hotkeys stops when they are
+;; reloaded.  A Startup folder .lnk should point at *this file* rather
+;; than a copy, so updating the package and logging back in is what picks
+;; up a new version.  script/install-startup.ps1 creates that shortcut.
 ;;
 ;;   org-upwell-watch.ahk --out C:\Users\you\.local\share\org-upwell
 

@@ -10,8 +10,8 @@
 ;;; Commentary:
 
 ;; A small GTD project with files, generated.  Not mixed into the real
-;; memex: `org-upwell-demo-mode' points `org-agenda-files' and the
-;; store at a disposable directory, and switching off puts them back.
+;; ones: `org-upwell-demo-mode' points `org-agenda-files' and the store
+;; at a disposable directory, and switching off puts them back.
 ;;
 ;; Dates are computed, never written down -- the same reason
 ;; org-foresight-demo does it that way.  Regenerating is the way back

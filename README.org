@@ -3,88 +3,86 @@
 
 Files rising to the heading that is being lived.
 
-org-foresight answers *when* a thing fits on the day. org-convect takes
-purpose at the top of the ladder and carries it down as far as areas
-(H2); the climb back is a reduction -- purpose written again from what
-the lower rungs did. This package is the other vertical. It happens at
-the day's feet (H1): the files and URLs work is done with rise to the
-heading that is being lived. It does not climb the ladder. It supplies
-the surface convect and foresight already stand on.
-
-A user heading -- a project in ~project.org~, a task in ~journal.org~, a
-meeting calsync wrote -- has a *domain*. Expanding the domain brings back the
-Org entry and the files and URLs that claim it. Those files are not listed
-under the heading; they point up at its id. upwell.org is storage, not work.
+A user heading -- a project, a task, a meeting -- has a *domain*. Expanding
+the domain brings back the Org entry and the files and URLs that claim it.
+Those files are not listed under the heading; they point up at its id.
+~upwell.org~ is storage for those identities, not the work.
 
 Capture happens *outside* Emacs. A resident watcher records the frontmost
-Office document and, when it can, the browser URL, without a hotkey and
-without Emacs being focused. Attribution is the intersection of those traces
-with CLOCK intervals, including clocks filled in afterwards from the agenda
-(org-foresight's ~C~).
+document and, when it can, the browser URL, without a hotkey and without
+Emacs being focused. Attribution is the intersection of those traces with
+CLOCK intervals, including clocks filled in afterwards from the agenda.
+
+It is one of three verticals, and it works with the other two if you have
+them, but needs neither: [[https://github.com/yoshzucker/org-foresight][org-foresight]] answers *when* a thing fits on the
+day, [[https://github.com/yoshzucker/org-convect][org-convect]] carries purpose down the ladder of horizons and reduces
+it back up. This one runs at the day's feet, where the work touches files.
 
 * Install (Emacs)
 
 #+begin_src emacs-lisp
 (use-package org-upwell
-  :load-path "~/Developer/org-upwell"
   :after org
   :config
-  ;; Your own open policy, if you have one: it decides which extensions
-  ;; go to the OS and which are read inside Emacs.  Unset, files go to
-  ;; the OS default application.
-  (setq org-upwell-open-function #'my/open-file)
   (org-upwell-mode 1))
 #+end_src
 
-Straight users, keep the ~script/~ directory:
+With straight.el, keep the ~script/~ directory -- it is where the watcher
+lives:
 
 #+begin_src emacs-lisp
 :straight (org-upwell :host github :repo "yoshzucker/org-upwell"
                       :files ("*.el" ("script" "script/*")))
 #+end_src
 
-~org-upwell-mode~ registers org-protocol, the clock hooks (including advice
-on ~org-foresight--file-clocked~, so agenda ~C~ attributes traces in the
-filled interval), drop handlers, and a quiet sync timer. It does *not* start
-the watcher. The watcher is a process of its own.
+~org-upwell-mode~ registers org-protocol, the clock hooks, drop handlers,
+and a quiet sync timer. It does *not* start the watcher: the watcher is a
+process of its own.
+
+If your configuration already has a policy for opening files -- which
+extensions belong to the OS and which are read inside Emacs -- give it to
+~org-upwell-open-function~ rather than have it decided twice:
+
+#+begin_src emacs-lisp
+(setq org-upwell-open-function #'your-open-function)
+#+end_src
+
+Unset, files go to the OS default application.
 
 * Install (the watcher)
 
-The watcher must be a login item, not an Emacs subprocess. On macOS a
-privacy prompt spawned by Emacs is attributed to Emacs, which has no
-Automation usage string -- the same hole org-calsync hit with Calendar.app.
-On Windows, a watcher that dies with Emacs stops catching the hour after
+The watcher has to be a login item rather than an Emacs subprocess. On
+macOS a privacy prompt raised by a subprocess is attributed to Emacs, which
+carries no Automation usage string, so the dialog never appears. On
+Windows, a watcher that dies with Emacs stops catching the hour the moment
 the frame is closed.
 
-Use the AutoHotkey watcher on Windows, the osascript watcher on macOS.
-The PowerShell watcher is a fallback for a machine without AutoHotkey;
-it is not the one to install.
+Use the AutoHotkey watcher on Windows and the osascript watcher on macOS.
+The PowerShell watcher is a fallback for a machine without AutoHotkey.
 
-** Windows (production)
+** Windows
 
-Do not add this to ~remap-windows-keys.ahk~. A separate Startup shortcut
-points at ~script/org-upwell-watch.ahk~ in this package (not a copy), so
-~git pull~ then a restart is what picks up a new version.
-
-Once:
+Once, from the package directory:
 
 : powershell -NoProfile -ExecutionPolicy Bypass -File script\install-startup.ps1
 
-The same shortcut is also registered by ~bootstrap.ps1~ (~Setup-StartupShortcuts~).
-Log off or restart to start it. Emacs does not have to be running.
+That puts a shortcut in the Startup folder pointing at
+~script/org-upwell-watch.ahk~ *in place* -- not a copy -- so updating the
+package and logging back in is what picks up a new version. Log off or
+restart to start it. Emacs does not have to be running.
 
-** macOS (development / test)
+** macOS
 
-Once:
+Once, from the package directory:
 
-: bash ~/Developer/org-upwell/script/install-launchagent.macos
+: bash script/install-launchagent.macos
 
 That writes ~~/Library/LaunchAgents/org.upwell.watch.plist~ with this
-machine's paths, then ~bootstrap~s the job. Re-run after moving the
-package. The first Excel / Safari / Chrome / Edge / Finder capture will
-ask for Automation permission -- grant it to this job, not to Emacs.
+machine's paths and bootstraps the job. Re-run it after moving the package.
+The first capture asks for Automation permission -- grant it to this job,
+not to Emacs.
 
-For a one-off test session only (not how it should run day to day):
+For a one-off test session only, and not how it should run day to day:
 
 : M-x org-upwell-watch-start
 
@@ -100,15 +98,18 @@ For a one-off test session only (not how it should run day to day):
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
 | ~org-upwell-bench~ | Listing of the domain, drop target. A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits |
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
-| ~org-upwell-demo-mode~ | Point the store and the agenda at generated data (like org-foresight-demo-mode) |
+| ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
 
-Agenda ~F~ (follow mode), with ~org-upwell-mode~ on, also updates the bench from the agenda row. It does not open files.
+Agenda ~F~ (follow mode), with ~org-upwell-mode~ on, also updates the bench
+from the agenda row. It does not open files.
 
-emacsclient, from AHK or FlowLauncher, to expand the current clock:
+From a launcher, a hotkey, or anything else that can run a command, to
+expand whatever is being clocked:
 
 : emacsclient -e "(org-upwell-expand-clock)"
 
-org-protocol (bookmarklet in ~script/org-upwell-bookmarklet.txt~):
+org-protocol, for a browser (bookmarklet in
+~script/org-upwell-bookmarklet.txt~):
 
 : org-protocol://upwell?url=…&title=…
 : org-protocol://upwell?expand=ORG-ID
@@ -119,14 +120,14 @@ Two clocks, not one.
 
 | What | When | Who |
 |---|---|---|
-| A *trace* (path/URL + unix time) | every 15s, only if the front document changed; also new files in Downloads | the watcher, Emacs need not be running |
-| A *provisional claim* | Emacs intersects traces with CLOCK intervals: a 60s timer while Emacs is up, immediately on clock-out, immediately after foresight ~C~ / ~H~ | Emacs |
-| A *confirmed claim* | clock-out or ~C~ / ~H~ review (Enter keeps, ~n~ rejects, ~r~ reassigns). An explicit pin/drop is confirmed at once | you |
+| A *trace* (path/URL + unix time) | every 15s, only if the front document changed; also new files in the download directory | the watcher, Emacs need not be running |
+| A *provisional claim* | Emacs intersects traces with CLOCK intervals: a 60s timer while Emacs is up, immediately on clock-out, immediately after a clock is filled in from the agenda | Emacs |
+| A *confirmed claim* | the review at clock-out or after a fill (Enter keeps, ~n~ rejects, ~r~ reassigns). An explicit pin or drop is confirmed at once | you |
 | A *rejection* | the same review's ~n~ / ~r~. Written down, because the intersection runs again a minute later and would otherwise propose the same file | you |
 
 The watcher does not know Org. If Emacs is closed, traces pile up and wait.
-Nothing is guessed when there is no clock: that file becomes an
-unclaimed item, a row on the foresight board, not a wrong project.
+Nothing is guessed when there is no clock: that file becomes an unclaimed
+item, a row to deal with later, not a wrong project.
 
 An answer you gave -- kept or rejected -- is never overwritten by a later
 sample. A rejected file is not on the heading and is unclaimed again; it
@@ -136,18 +137,27 @@ just is not offered for that heading a second time.
 
 | What | Where | Why |
 |---|---|---|
-| Identity (upwell.org) | ~org-directory~ (~/Documents/memex/~) | it is Org, next to journal and projects |
-| Traces (JSONL) | ~~/.local/share/org-upwell/~ | the watcher is not Emacs; this path exists without ~.emacs.d~ |
+| Identity (~upwell.org~) | ~org-upwell-directory~, or ~org-directory~ | it is Org, next to the rest of your Org files |
+| Traces (JSONL) | ~org-upwell-trace-directory~, or ~$XDG_DATA_HOME/org-upwell/~ | the watcher is not Emacs; this path has to exist without ~.emacs.d~ |
 
-~/.emacs.d/~ (and no-littering's ~var/~) is for files Emacs writes. The
-watcher starts at login, often before Emacs, and must not need it.
+~.emacs.d~ is for files Emacs writes. The watcher starts at login, often
+before Emacs, and must not depend on it.
+
+Where a moved file is looked for again is ~org-upwell-search-roots~, and
+where ~org-upwell-create~ puts a new one is ~org-upwell-create-directory~
+-- or the ~:UPWELL_DIR:~ property on the heading, when it has one.
 
 * What this is not
 
-- Not org-attach. Screenshots belong to the note; xlsx belongs to Excel.
-- Not a 1:1 heading-to-folder map. A folder is one appearance.
-- Not a document database. ScanSnap archives stay on disk until pinned.
-- Not a replacement for FlowLauncher.
+- Not org-attach. A screenshot belongs to the note it illustrates; a
+  spreadsheet belongs to the application that opens it.
+- Not a 1:1 heading-to-folder map. A folder is one appearance of an item,
+  not its identity, and one file can belong to two headings.
+- Not a document archive. A scanned pile on disk stays on disk until
+  something claims it.
+- Not a file launcher. Opening a file you can already name is what a
+  launcher is for. This answers the other question: which files belong to
+  the heading you are living.
 
 * Tests
 

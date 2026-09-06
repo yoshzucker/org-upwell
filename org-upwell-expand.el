@@ -41,8 +41,8 @@ The rest stay listed on the bench, one click each."
   "When non-nil, expand clocks in if nothing else is running.
 
 Off by default: expanding to look is not the same as starting the work,
-and a clock that starts itself is the thing `my/org-clock-obeys-the-row'
-exists to stop."
+and a clock nobody asked for is worse than no clock, because it has to
+be found and corrected before the day's record can be read."
   :type 'boolean
   :group 'org-upwell)
 
@@ -64,15 +64,24 @@ a fraction."
 
 ;;;; Resolve / open
 
-(defun org-upwell-search-roots ()
-  "Directories a stale path may have been moved into."
-  (seq-filter
-   #'file-directory-p
-   (delq nil
-         (list (expand-file-name "~/Documents/project/")
-               (expand-file-name "~/Documents/upwell/")
-               (expand-file-name "~/Downloads/")
-               (and (bound-and-true-p org-directory) org-directory)))))
+(defcustom org-upwell-search-roots '("~/Downloads/")
+  "Directories to look in when a stored path has gone.
+
+A file that was renamed, or filed away into a `done' folder, is found
+again by its file-id or its basename under these.  Only directories that
+exist are searched, so one list may name the trees of several machines.
+
+Keep it short.  This is walked on every appearance that has gone stale,
+and a root the size of a whole home directory turns a resolve into a
+wait."
+  :type '(repeat directory)
+  :group 'org-upwell)
+
+(defun org-upwell--search-roots ()
+  "Existing directories among `org-upwell-search-roots'."
+  (seq-filter #'file-directory-p
+              (delq nil (mapcar (lambda (d) (and d (expand-file-name d)))
+                                org-upwell-search-roots))))
 
 (defun org-upwell-resolve (item)
   "Return a still-usable appearance of ITEM, updating the store.
@@ -119,12 +128,11 @@ does not die."
 (defun org-upwell--files-named (name)
   "Return absolute paths named NAME under `org-upwell-search-roots'.
 
-Uses fd when it is on PATH -- `~/Documents/project/' is large enough that
-a Lisp walk of it is a hitch, and fd is already how this machine searches
-that tree."
+Uses fd when it is on PATH.  A project tree big enough to be worth
+searching is also big enough that a Lisp walk of it is a visible hitch."
   (let ((rx (concat "\\`" (regexp-quote name) "\\'"))
         hits)
-    (dolist (root (org-upwell-search-roots) hits)
+    (dolist (root (org-upwell--search-roots) hits)
       (when (and root (file-directory-p root))
         (setq hits
               (append hits
