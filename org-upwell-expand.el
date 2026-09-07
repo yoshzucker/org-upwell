@@ -252,7 +252,8 @@ not land in the listing the user is picking from."
 
 (defun org-upwell-domain (&optional marker)
   "Return the domain of the user heading at MARKER (or point) as a plist."
-  (org-with-point-at (or marker (point))
+  (org-upwell-with-store
+   (org-with-point-at (or marker (point))
     (org-back-to-heading t)
     (let* ((id (org-id-get))
            (end (save-excursion (org-end-of-subtree t t)))
@@ -272,7 +273,7 @@ not land in the listing the user is picking from."
             :area (org-entry-get (point) "CONVECT_AREA" t)
             :dir (org-entry-get (point) "UPWELL_DIR" t)
             :next (nreverse nexts)
-            :items (and id (org-upwell-claimed-to id))))))
+            :items (and id (org-upwell-claimed-to id)))))))
 
 ;;;; Expand
 

@@ -302,22 +302,82 @@ still a signal, it just has nowhere to rise to."
           :stale (org-entry-get (point) org-upwell-prop-stale)
           :marker (point-marker))))
 
+(defvar org-upwell--store nil
+  "Items read once, while `org-upwell-with-store' holds the store open.
+
+Nil outside that form, and every read walks the file again -- which is right
+for a command, where the file may have been edited since the last one.")
+
+(defvar org-upwell--store-held nil
+  "Non-nil while `org-upwell-with-store' is holding the store open.")
+
+(defvar org-upwell--store-walks 0
+  "How many times the file has actually been walked.  Read by the tests.")
+
+(defmacro org-upwell-with-store (&rest body)
+  "Run BODY with the store read once and written once.
+
+Reading is the expensive half.  `org-upwell-save' asks
+`org-upwell-find-any' whether an item is already stored, and that asks
+`org-upwell-find' up to five times, and each of those used to walk the whole
+file.  One trace therefore walked a hundred-heading store several times over,
+and a background pass over a day of traces walked it hundreds of times --
+seconds of work, and enough consing to send the garbage collector round
+several times in the middle of somebody's typing.
+
+Writing is the other half.  Saving after every item wrote the file once per
+trace.  Here the writing waits until the end and happens once, if anything
+changed at all."
+  (declare (indent 0) (debug t))
+  `(if org-upwell--store-held
+       (progn ,@body)                   ; already held; do not save twice
+     (let ((org-upwell--store nil)
+           (org-upwell--store-held t))
+       (unwind-protect (progn ,@body)
+         (org-upwell--save-store)))))
+
+(defun org-upwell--save-store ()
+  "Write the store if anything changed.  Quiet: this runs from a timer."
+  (let ((buf (get-file-buffer (org-upwell-file))))
+    (when (and buf (buffer-modified-p buf))
+      (with-current-buffer buf
+        (let ((save-silently t))
+          (save-buffer))))))
+
 (defun org-upwell-items ()
   "Return every stored item as a plist.
 
-The store is small -- live work, not an archive -- so this is a walk,
-not an index."
-  (let ((f (org-upwell-file))
-        items)
-    (when (file-exists-p f)
-      (with-current-buffer (find-file-noselect f)
-        (org-with-wide-buffer
-         (org-map-entries
-          (lambda ()
-            (when (org-entry-get (point) org-upwell-prop-flag)
-              (push (org-upwell--heading-plist) items)))
-          nil 'file))))
-    (nreverse items)))
+The store is small -- live work, not an archive -- so this is a walk, not an
+index.  Inside `org-upwell-with-store' the walk happens once and the rest of
+the reads come back from what it found."
+  (or org-upwell--store
+      (let ((f (org-upwell-file))
+            items)
+        (when (file-exists-p f)
+          (cl-incf org-upwell--store-walks)
+          (with-current-buffer (find-file-noselect f)
+            (org-with-wide-buffer
+             (org-map-entries
+              (lambda ()
+                (when (org-entry-get (point) org-upwell-prop-flag)
+                  (push (org-upwell--heading-plist) items)))
+              nil 'file))))
+        (setq items (nreverse items))
+        (when org-upwell--store-held
+          (setq org-upwell--store items))
+        items)))
+
+(defun org-upwell--store-remember (item)
+  "Put ITEM into the held store, replacing the entry with the same id.
+
+Dropping the whole thing instead would make the next read walk the file
+again, which is one walk per write -- the cost this exists to remove."
+  (when org-upwell--store-held
+    (let ((id (plist-get item :id)))
+      (setq org-upwell--store
+            (append (seq-remove (lambda (m) (equal (plist-get m :id) id))
+                                org-upwell--store)
+                    (list item))))))
 
 (defun org-upwell-find (key value)
   "Return the first item whose KEY equals VALUE.
@@ -343,6 +403,21 @@ renamed file that kept its file-id is found before a new path is created."
            (org-upwell-find :url (plist-get spec :url)))
       (and (plist-get spec :office)
            (org-upwell-find :office (plist-get spec :office)))))
+
+(defun org-upwell--unchanged-p (item existing)
+  "Return non-nil when writing ITEM would leave the store exactly as it is.
+
+The background pass sees the same traces again every time it runs, and
+rewriting a heading with the values it already holds costs a property edit
+apiece and marks the file dirty, so the store is written out once a minute
+for nothing."
+  (and existing
+       (equal (org-upwell--format-claims (plist-get item :claims))
+              (org-upwell--format-claims (plist-get existing :claims)))
+       (seq-every-p (lambda (key)
+                      (equal (plist-get item key) (plist-get existing key)))
+                    '(:id :name :path :url :office :file-id
+                      :provenance :captured :opened :stale))))
 
 (defun org-upwell--write-at-point (item)
   "Write ITEM's properties onto the heading at point."
@@ -421,7 +496,11 @@ them, so the last claim can actually be taken off."
                (file-exists-p (plist-get merged :path)))
       (setq merged (plist-put merged :file-id
                               (org-upwell-file-id (plist-get merged :path)))))
-    (with-current-buffer (find-file-noselect (org-upwell-file))
+    (when (org-upwell--unchanged-p merged existing)
+      (org-upwell--store-remember merged)
+      (setq merged nil))
+    (when merged
+     (with-current-buffer (find-file-noselect (org-upwell-file))
       (org-with-wide-buffer
        (if (and (plist-get merged :marker)
                 (eq (marker-buffer (plist-get merged :marker))
@@ -436,8 +515,11 @@ them, so the last claim can actually be taken off."
          (unless (equal (org-get-heading t t t t) name)
            (org-edit-headline name)))
        (setq merged (plist-put merged :marker (point-marker)))
-       (save-buffer)))
-    merged))
+       (unless org-upwell--store-held
+         (save-buffer)))))
+    (if merged
+        (progn (org-upwell--store-remember merged) merged)
+      existing)))
 
 (defun org-upwell-claim (item heading-id status)
   "Claim ITEM to HEADING-ID at STATUS.  Return the saved item.

@@ -40,7 +40,8 @@
 
 (defun org-upwell-foresight-signals (&optional _scan)
   "Return (LABEL . FINDINGS) groups for the foresight board."
-  (let (unclaimed stale empty)
+  (org-upwell-with-store
+   (let (unclaimed stale empty)
     (dolist (m (org-upwell-items))
       (when (org-upwell-unclaimed-p m)
         (push (org-upwell--finding m "no heading claims this") unclaimed))
@@ -63,7 +64,7 @@
                                      (nreverse unclaimed)))
                 (and stale (cons org-upwell-signal-stale (nreverse stale)))
                 (and empty (cons org-upwell-signal-empty
-                                 (delete-dups (nreverse empty))))))))
+                                 (delete-dups (nreverse empty)))))))))
 
 (defun org-upwell-plan-setup ()
   "Contribute signals when org-foresight is present."

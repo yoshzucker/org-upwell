@@ -60,11 +60,17 @@
 (require 'org-upwell-demo)
 
 (defcustom org-upwell-sync-interval 60
-  "Seconds between background intersections of traces and clocks.
+  "Seconds of idleness before traces and clocks are intersected.
 
-The watcher samples more often; this is only how often Emacs reads the
-log.  A clock-out or a foresight C fill intersects immediately and does
-not wait for the timer."
+Idleness, not an interval.  A repeating timer fires while you are typing, and
+this pass reads the whole store; landing in the middle of a keystroke, it is
+felt.  An idle timer runs once each time Emacs goes quiet, which is when a
+background pass belongs.
+
+The watcher samples far more often than this, and its log waits on disk until
+Emacs next has a moment.  Nothing is lost by going a long stretch without a
+pass: a clock-out and a foresight fill both intersect on the spot and do not
+wait for the timer."
   :type 'number
   :group 'org-upwell)
 
@@ -90,9 +96,8 @@ not wait for the timer."
         (add-hook 'org-agenda-mode-hook #'org-upwell-enable-dnd)
         (when org-upwell-sync-interval
           (setq org-upwell--sync-timer
-                (run-with-timer org-upwell-sync-interval
-                                org-upwell-sync-interval
-                                #'org-upwell--sync-quietly))))
+                (run-with-idle-timer org-upwell-sync-interval t
+                                     #'org-upwell--sync-quietly))))
     (org-upwell-claim-teardown)
     (org-upwell-plan-teardown)
     (org-upwell-follow-teardown)

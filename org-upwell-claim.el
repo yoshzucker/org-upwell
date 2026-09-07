@@ -155,27 +155,28 @@ and from after a clock is filled in after the fact.  Traces that sit in
 no interval become unclaimed items, so a file opened off the clock is
 still findable and still a signal."
   (interactive)
-  (let* ((days (or days 1))
-         (segments (org-upwell-clock-segments days))
-         (from (org-upwell--day-start (1- days)))
-         (to (current-time))
-         (traces (org-upwell-unique-traces (org-upwell-read-traces from to)))
-         (n 0))
-    (dolist (seg segments)
-      (when (org-upwell-claim-interval
-             (plist-get seg :marker)
-             (plist-get seg :from)
-             (plist-get seg :to)
-             "trace")
-        (setq n (1+ n))))
-    (dolist (tr traces)
-      (let* ((ts-from (seconds-to-time (plist-get tr :ts)))
-             (ts-to (time-add ts-from 1)))
-        (unless (org-upwell--segments-overlapping ts-from ts-to segments)
-          (org-upwell-save (org-upwell-trace-to-spec tr)))))
-    (when (called-interactively-p 'interactive)
-      (message "org-upwell: synced %d interval(s)" n))
-    n))
+  (org-upwell-with-store
+   (let* ((days (or days 1))
+          (segments (org-upwell-clock-segments days))
+          (from (org-upwell--day-start (1- days)))
+          (to (current-time))
+          (traces (org-upwell-unique-traces (org-upwell-read-traces from to)))
+          (n 0))
+     (dolist (seg segments)
+       (when (org-upwell-claim-interval
+              (plist-get seg :marker)
+              (plist-get seg :from)
+              (plist-get seg :to)
+              "trace")
+         (setq n (1+ n))))
+     (dolist (tr traces)
+       (let* ((ts-from (seconds-to-time (plist-get tr :ts)))
+              (ts-to (time-add ts-from 1)))
+         (unless (org-upwell--segments-overlapping ts-from ts-to segments)
+           (org-upwell-save (org-upwell-trace-to-spec tr)))))
+     (when (called-interactively-p 'interactive)
+       (message "org-upwell: synced %d interval(s)" n))
+     n)))
 
 ;;;; Review
 
@@ -197,8 +198,9 @@ is written down: the intersection runs again every minute and would
 otherwise put the same files back.  `r' reassigns one.  Called from
 clock-out and from after `org-foresight-clock-fill'; silent when there
 is nothing new."
-  (let* ((heading-id (org-upwell-heading-id marker))
-         (items (seq-filter
+  (org-upwell-with-store
+   (let* ((heading-id (org-upwell-heading-id marker))
+          (items (seq-filter
                  (lambda (m)
                    (eq 'provisional
                        (org-upwell-claim-status (plist-get m :claims)
@@ -227,7 +229,7 @@ is nothing new."
            (dolist (m items)
              (org-upwell-claim m heading-id 'confirmed))
            (message "org-upwell: kept %d on %s" (length items) title))))
-      items))))
+      items)))))
 
 (defun org-upwell--reassign-loop (items from-id)
   "Interactively reassign ITEMS away from FROM-ID."

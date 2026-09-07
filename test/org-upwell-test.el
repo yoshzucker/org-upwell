@@ -948,6 +948,84 @@ walked, and a nil in the list must not reach `file-directory-p'."
       (org-upwell-demo-mode -1)
       (should (equal org-agenda-files (list real))))))
 
+
+;;;; What the background pass costs
+
+(defun org-upwell-test--trace-day (dir n)
+  "Write N traces for today under DIR and return the paths they name."
+  (let ((now (floor (float-time))) paths)
+    (dotimes (i n)
+      (let ((path (expand-file-name (format "doc-%d.xlsx" i) dir)))
+        (write-region "x" nil path)
+        (org-upwell-test--write-trace (- now 3600 (- i)) path)
+        (push path paths)))
+    (nreverse paths)))
+
+(ert-deftest org-upwell-test-one-pass-walks-the-store-once ()
+  "The pass runs on a timer while somebody is working, so what it costs is
+felt.  `org-upwell-save' asks whether an item is stored already, that asks up
+to five times, and each ask used to walk the whole file -- so one trace walked
+the store several times over and a day of them walked it hundreds of times."
+  (org-upwell-test--with-dir
+    (org-upwell-test--trace-day dir 20)
+    (setq org-upwell--store-walks 0)
+    (org-upwell-sync 1)
+    (should (= 1 org-upwell--store-walks))))
+
+(ert-deftest org-upwell-test-one-pass-writes-the-store-once ()
+  "Saving after every item wrote the file once per trace."
+  (org-upwell-test--with-dir
+    (org-upwell-test--trace-day dir 20)
+    (let ((writes 0)
+          (orig (symbol-function 'save-buffer)))
+      (cl-letf (((symbol-function 'save-buffer)
+                 (lambda (&rest a) (setq writes (1+ writes)) (apply orig a))))
+        (org-upwell-sync 1))
+      (should (<= writes 1)))))
+
+(ert-deftest org-upwell-test-a-pass-that-changes-nothing-writes-nothing ()
+  "The same traces come round again every time the timer fires.  Rewriting a
+heading with the values it already holds costs a property edit apiece and
+marks the file dirty, so the store went to disk once a minute for nothing."
+  (org-upwell-test--with-dir
+    (org-upwell-test--trace-day dir 20)
+    (org-upwell-sync 1)
+    (let ((writes 0)
+          (orig (symbol-function 'save-buffer)))
+      (cl-letf (((symbol-function 'save-buffer)
+                 (lambda (&rest a) (setq writes (1+ writes)) (apply orig a))))
+        (org-upwell-sync 1))
+      (should (= 0 writes)))))
+
+(ert-deftest org-upwell-test-holding-the-store-changes-nothing-it-holds ()
+  "Reading once instead of a hundred times has to give the same answer."
+  (org-upwell-test--with-dir
+    (let ((paths (org-upwell-test--trace-day dir 12)))
+      (org-upwell-sync 1)
+      (let ((held (sort (mapcar (lambda (m) (plist-get m :name))
+                                (org-upwell-items))
+                        #'string<)))
+        ;; every trace is in the store, and once each
+        (should (= (length paths) (length held)))
+        (should (equal held (sort (mapcar #'file-name-nondirectory paths)
+                                  #'string<)))
+        ;; and a second pass with the store held open finds them all again
+        (should (org-upwell-with-store
+                  (seq-every-p (lambda (p) (org-upwell-find :path p)) paths)))))))
+
+(ert-deftest org-upwell-test-the-pass-waits-for-a-quiet-moment ()
+  "A repeating timer fires in the middle of a keystroke.  This pass reads the
+whole store, so landing there is felt as the typing catching."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-sync-interval 60)
+          (org-upwell--sync-timer nil))
+      (unwind-protect
+          (progn
+            (org-upwell-mode 1)
+            (should (timerp org-upwell--sync-timer))
+            (should (timer--idle-delay org-upwell--sync-timer)))
+        (org-upwell-mode -1)))))
+
 (provide 'org-upwell-test)
 
 ;;; org-upwell-test.el ends here
