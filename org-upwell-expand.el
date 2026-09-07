@@ -22,6 +22,7 @@
 (require 'org-clock)
 (require 'org-upwell-core)
 (require 'org-upwell-pin)
+(require 'org-upwell-claim)
 (require 'seq)
 (require 'cl-lib)
 (require 'button)
@@ -203,6 +204,43 @@ nothing opens in Emacs."
     (start-process "org-upwell-open" nil "xdg-open" path))
    (t (user-error "No system open command for %S" system-type))))
 
+(defun org-upwell--reveal-external (path)
+  "Show PATH in this machine's file manager, selected where it can be.
+
+Not `org-upwell-open-function': that setting decides which application a
+*file* belongs to, and this is a request for the desktop's own window onto
+the folder around it."
+  (let ((dir (file-name-directory (directory-file-name path))))
+    (cond
+     ((eq system-type 'windows-nt)
+      ;; explorer.exe answers 1 even when it worked, so the call is made
+      ;; and not asked about.
+      (call-process "explorer.exe" nil 0 nil
+                    (concat "/select,"
+                            (replace-regexp-in-string "/" "\\" path t t))))
+     ((eq system-type 'darwin)
+      (start-process "org-upwell-reveal" nil "open" "-R" path))
+     ((eq system-type 'gnu/linux)
+      (start-process "org-upwell-reveal" nil "xdg-open" dir))
+     (t (user-error "No system reveal command for %S" system-type)))))
+
+(defun org-upwell-open-folder (&optional item)
+  "Open the folder ITEM lives in, with ITEM selected where the OS can.
+
+The bench answers \"which of these two same-named files is it?\" with the
+folder; this is how to go and stand in that folder.  A URL has no folder
+and says so.  A path that moved is resolved first, so the folder opened is
+the one the file is in now."
+  (interactive)
+  (let* ((m (or item
+                (org-upwell--bench-item-at-point)
+                (user-error "No item on this line")))
+         (app (org-upwell-resolve m)))
+    (unless (eq (plist-get app :kind) 'path)
+      (user-error "org-upwell: %s is not a file on this machine"
+                  (or (plist-get m :name) "this item")))
+    (org-upwell--reveal-external (plist-get app :value))))
+
 (defun org-upwell--bench-window-p (&optional window)
   "Return non-nil if WINDOW (default selected) shows the bench."
   (let ((buf (window-buffer (or window (selected-window)))))
@@ -326,7 +364,7 @@ file name so two \"File the photos\" do not collapse."
     (cdr (assoc (completing-read "Expand: " (mapcar #'car cands) nil t)
                 cands))))
 
-(defun org-upwell-expand (&optional marker)
+(defun org-upwell-expand (&optional marker choose)
   "Expand the domain of a heading.
 
 With a heading at point (Org, agenda, or the bench), that heading.
@@ -335,14 +373,17 @@ From anywhere else, completing-read among today's clocks, open
 NEXT/ONGO, and headings that already have files.  So C-c v is the
 same key in every buffer.
 
+With a prefix argument, CHOOSE is non-nil and the heading is always
+read from that list, whatever point is on.
+
 If the bench is showing, it switches to this heading.  If agenda
 stole the window, it puts the bench back.  After `q', it stays
 gone -- expanding does not open a listing the user dismissed.
 Neither the bench nor an agenda gives up its window to the Org
 file; from an Org buffer, point lands on the heading."
-  (interactive)
+  (interactive (list nil current-prefix-arg))
   (let* ((marker (or marker
-                     (org-upwell--current-heading-marker)
+                     (and (not choose) (org-upwell--current-heading-marker))
                      (org-upwell--read-heading-marker)))
          (domain (org-upwell-domain marker))
          (items (plist-get domain :items))
@@ -561,8 +602,10 @@ reorganizes the frame, the bench is allowed to disappear."
           (insert "\nFiles\n")
           (if (null (plist-get domain :items))
               (insert (propertize "  (none)\n" 'face 'shadow))
-            (dolist (m (plist-get domain :items))
-              (org-upwell--bench-insert-item m domain)))
+            (let ((widths (org-upwell--bench-widths
+                           (plist-get domain :items) buf)))
+              (dolist (m (plist-get domain :items))
+                (org-upwell--bench-insert-item m domain widths))))
           (insert (propertize "Drop a file or URL here to pin it to this heading.\n"
                               'face 'shadow))
           (goto-char (point-min))
@@ -582,29 +625,116 @@ puts it back.  After `q', the bench stays gone."
             (eq org-upwell--bench-intent 'wanted))
     (org-upwell-bench (org-upwell-domain marker))))
 
-(defun org-upwell--bench-insert-item (m domain)
-  "Insert one item line for M under DOMAIN."
+(defun org-upwell--pad (s width)
+  "Return S with spaces after it, to WIDTH columns."
+  (concat s (make-string (max 0 (- width (string-width s))) ?\s)))
+
+(defun org-upwell--tail (s width)
+  "Return S in WIDTH columns, keeping the end when it has to be cut.
+
+The end is the part that tells two of them apart: files with the same
+name are in different folders, and the folder is the last thing on the
+line before the name."
+  (let ((w (string-width s)))
+    (if (or (<= w width) (< width 2))
+        s
+      (concat "…" (truncate-string-to-width s w (- w (1- width)))))))
+
+(defun org-upwell--url-host (url)
+  "Return the host of URL, or nil.
+Also reads the URL out of a minted office protocol, which has one inside it."
+  (and url
+       (string-match "[a-z][a-z0-9+.-]*://\\([^/?#]+\\)" url)
+       (match-string 1 url)))
+
+(defun org-upwell--item-where (item)
+  "Return where ITEM is: the folder for a file, the host for a URL.
+
+Never the name again.  A bench with two lines called the same thing is
+answered by the folder, and by nothing else on the line."
+  (let ((path (plist-get item :path))
+        (url (or (plist-get item :url) (plist-get item :office))))
+    (cond
+     (path (abbreviate-file-name
+            (directory-file-name (file-name-directory path))))
+     (url (or (org-upwell--url-host url) url))
+     (t ""))))
+
+(defun org-upwell--ago (item)
+  "How long since ITEM was last opened, or caught.  Empty when neither is known."
+  (let* ((stamp (or (plist-get item :opened) (plist-get item :captured)))
+         (time (and stamp (ignore-errors (date-to-time stamp))))
+         (secs (and time (max 0 (floor (float-time (time-subtract nil time)))))))
+    (cond
+     ((null secs) "")
+     ((< secs 3600) (format "%dm" (max 1 (/ secs 60))))
+     ((< secs 86400) (format "%dh" (/ secs 3600)))
+     ((< secs (* 30 86400)) (format "%dd" (/ secs 86400)))
+     ((< secs (* 365 86400)) (format "%dmo" (/ secs (* 30 86400))))
+     (t (format "%dy" (/ secs (* 365 86400)))))))
+
+(defun org-upwell--bench-widths (items buf)
+  "Return (NAME-WIDTH . WHERE-WIDTH) for ITEMS listed in BUF.
+
+The name column is as wide as the longest name, within reason.  The folder
+column is as wide as the longest folder, up to what the window has left
+after the columns that follow it -- so a wide frame does not put a hand's
+width of blank between two short columns."
+  (let* ((win (get-buffer-window buf nil))
+         (total (if (window-live-p win) (window-body-width win) (frame-width)))
+         (name (min 40 (max 20 (apply #'max 0
+                                      (mapcar (lambda (m)
+                                                (string-width
+                                                 (or (plist-get m :name) "?")))
+                                              items)))))
+         (asked (apply #'max 0
+                       (mapcar (lambda (m)
+                                 (string-width (org-upwell--item-where m)))
+                               items))))
+    (cons name (max 12 (min asked (- total name 37))))))
+
+(defun org-upwell--bench-insert-item (m domain widths)
+  "Insert one item line for M under DOMAIN, in the columns WIDTHS."
   (let* ((name (or (plist-get m :name) "?"))
          (id (plist-get m :id))
          (st (let ((hid (plist-get domain :id)))
                (and hid (org-upwell-claim-status
                          (plist-get m :claims) hid))))
          (marked (and id (member id org-upwell-bench-marked)))
+         (name-w (car widths))
+         (where-w (cdr widths))
+         (shown (org-upwell--tail name name-w))
          (start (point)))
     (insert (if marked "* " "  "))
     (insert-text-button
-     name
+     shown
      'follow-link t
      'org-upwell m
      'help-echo (or (plist-get m :path) (plist-get m :url) "")
      'action (lambda (b)
                (org-upwell-open (button-get b 'org-upwell))))
-    (when (eq st 'provisional)
-      (insert (propertize "  provisional"
-                          'face 'shadow
-                          'help-echo "clock attributed this; not yet kept")))
-    (when (plist-get m :stale)
-      (insert (propertize "  stale" 'face 'warning)))
+    (insert (make-string (max 0 (- name-w (string-width shown))) ?\s) "  ")
+    (insert
+     (string-trim-right
+      (concat
+       (propertize (org-upwell--pad
+                    (org-upwell--tail (org-upwell--item-where m) where-w)
+                    where-w)
+                   'face 'shadow)
+       "  "
+       (propertize (org-upwell--pad (or (plist-get m :provenance) "") 6)
+                   'face 'shadow
+                   'help-echo "how this file came to be here")
+       "  "
+       (propertize (org-upwell--pad (org-upwell--ago m) 5) 'face 'shadow)
+       (if (eq st 'provisional)
+           (propertize "  provisional"
+                       'face 'shadow
+                       'help-echo "clock attributed this; not yet kept")
+         "")
+       (if (plist-get m :stale)
+           (propertize "  stale" 'face 'warning)
+         ""))))
     (insert "\n")
     (put-text-property start (1- (point)) 'org-upwell m)))
 
@@ -727,6 +857,105 @@ No prompt: the bench is a handful of files, not a dired of thousands."
   (setq org-upwell-bench-marked nil)
   (org-upwell-bench org-upwell-bench-domain))
 
+(defun org-upwell--bench-target-items ()
+  "Return the marked items, or the item on this line.
+
+The rule `x' already uses: marks when there are any, this line when there
+are none.  A command that writes to the store is not the place to guess
+more widely than that."
+  (let* ((items (plist-get org-upwell-bench-domain :items))
+         (marked (and org-upwell-bench-marked
+                      (seq-filter (lambda (m)
+                                    (member (plist-get m :id)
+                                            org-upwell-bench-marked))
+                                  items))))
+    (or marked
+        (when-let ((m (org-upwell--bench-item-at-point)))
+          (list m))
+        (user-error "No item on this line"))))
+
+(defun org-upwell--bench-heading-id ()
+  "Return the org-id of the heading this bench is showing."
+  (or (plist-get org-upwell-bench-domain :id)
+      (user-error "This bench is not showing a heading with an id")))
+
+(defun org-upwell--bench-redraw ()
+  "Read the store again and draw this bench, leaving point on its line.
+
+Marks go: what they pointed at may not be there any more."
+  (let ((line (line-number-at-pos))
+        (marker (plist-get org-upwell-bench-domain :marker)))
+    (setq org-upwell-bench-marked nil)
+    (org-upwell-bench (org-upwell-domain marker))
+    (goto-char (point-min))
+    (forward-line (1- line))))
+
+(defun org-upwell-bench-keep ()
+  "Keep the marked items, or this one, on this heading.
+
+The clock proposes; this is where a person agrees.  A kept claim is not
+downgraded by a later pass."
+  (interactive)
+  (let ((id (org-upwell--bench-heading-id))
+        (items (org-upwell--bench-target-items)))
+    (org-upwell-with-store
+      (dolist (m items)
+        (org-upwell-claim m id 'confirmed)))
+    (org-upwell--bench-redraw)
+    (message "org-upwell: kept %d" (length items))))
+
+(defun org-upwell-bench-drop ()
+  "Take the marked items, or this one, off this heading.
+
+Written down as a rejection rather than forgotten: the intersection runs
+again on a timer and would otherwise put the same file back on the same
+heading.  The item itself stays in the store, and so does the file."
+  (interactive)
+  (let ((id (org-upwell--bench-heading-id))
+        (items (org-upwell--bench-target-items)))
+    (org-upwell-with-store
+      (dolist (m items)
+        (org-upwell-reject m id)))
+    (org-upwell--bench-redraw)
+    (message "org-upwell: dropped %d from this heading" (length items))))
+
+(defun org-upwell-bench-forget ()
+  "Delete the marked items, or this one, from the store.
+
+`d' says the file does not belong here.  This says the item was not worth
+recording at all.  The file on disk is not touched."
+  (interactive)
+  (let* ((items (org-upwell--bench-target-items))
+         (n (length items)))
+    (when (yes-or-no-p
+           (format "Delete %d item%s from %s?  The file%s stay%s. "
+                   n (if (= n 1) "" "s")
+                   (file-name-nondirectory (org-upwell-file))
+                   (if (= n 1) "" "s") (if (= n 1) "s" "")))
+      (org-upwell-with-store
+        (dolist (m items)
+          (org-upwell-forget m)))
+      (org-upwell--bench-redraw)
+      (message "org-upwell: forgot %d" n))))
+
+(defun org-upwell-bench-reassign ()
+  "Move the marked items, or this one, to another heading."
+  (interactive)
+  (let ((id (org-upwell--bench-heading-id))
+        (items (org-upwell--bench-target-items)))
+    (org-upwell--reassign-loop items id)
+    (org-upwell--bench-redraw)))
+
+(defun org-upwell-bench-add-file (path)
+  "Claim PATH to the heading this bench is showing."
+  (interactive (list (read-file-name "Add to this heading: " nil nil t)))
+  (org-upwell-pin path (plist-get org-upwell-bench-domain :marker) "pin"))
+
+(defun org-upwell-bench-add-url (url)
+  "Claim URL to the heading this bench is showing."
+  (interactive "sAdd URL to this heading: ")
+  (org-upwell-pin url (plist-get org-upwell-bench-domain :marker) "pin"))
+
 (defvar org-upwell-bench-mode-map (make-sparse-keymap))
 (let ((map org-upwell-bench-mode-map))
   (set-keymap-parent map special-mode-map)
@@ -738,13 +967,20 @@ No prompt: the bench is a handful of files, not a dired of thousands."
   (define-key map (kbd "k") #'previous-line)
   (define-key map (kbd "o") #'org-upwell-visit-store)
   (define-key map (kbd "e") #'org-upwell-bench-open-in-emacs)
+  (define-key map (kbd "f") #'org-upwell-open-folder)
   (define-key map (kbd "RET") #'org-upwell-bench-open-at-point)
   (define-key map (kbd "a") #'org-upwell-bench-open-all)
   (define-key map (kbd "x") #'org-upwell-bench-open-marked)
   (define-key map (kbd "m") #'org-upwell-bench-toggle-mark)
   (define-key map (kbd "u") #'org-upwell-bench-unmark)
   (define-key map (kbd "t") #'org-upwell-bench-mark-toggle-all)
-  (define-key map (kbd "U") #'org-upwell-bench-unmark-all))
+  (define-key map (kbd "U") #'org-upwell-bench-unmark-all)
+  (define-key map (kbd "c") #'org-upwell-bench-keep)
+  (define-key map (kbd "d") #'org-upwell-bench-drop)
+  (define-key map (kbd "D") #'org-upwell-bench-forget)
+  (define-key map (kbd "r") #'org-upwell-bench-reassign)
+  (define-key map (kbd "+") #'org-upwell-bench-add-file)
+  (define-key map (kbd "L") #'org-upwell-bench-add-url))
 
 (define-derived-mode org-upwell-bench-mode special-mode "Upwell"
   "Thin listing of a heading's materials.
@@ -755,6 +991,16 @@ replacing the bench.  RET / a / x open with the OS.  `e' visits inside
 Emacs, still not in the bench.  `j' / `k' still move.  `U' unmarks
 all, like dired.  `g' redraws.  `q' deletes the strip; follow will
 not cut another one until the heading changes.
+
+`f' opens the folder the file is in, with the file selected: the folder
+is what tells two files of the same name apart, so it is also where to
+go and look.
+
+`c' and `d' are the two answers to a claim the clock proposed: keep it
+on this heading, or take it off and have that stay said.  `D' deletes
+the item from the store.  `r' moves it to another heading.  `+' and
+`L' add a file and a URL.  All of them act on the marks when there are
+marks, and on this line when there are none.
 
 \\{org-upwell-bench-mode-map}"
   (setq truncate-lines t)
@@ -815,12 +1061,23 @@ the heading changes, or the bench is asked for again."
                (not (org-before-first-heading-p)))
       (org-upwell--follow-draw (point-marker)))))
 
+(defcustom org-upwell-agenda-follow nil
+  "When non-nil, moving in the agenda redraws the bench for the row.
+
+Org's own follow (`F') is a separate thing and opens the entry's file in
+another window.  This one draws the bench and nothing else, so the frame
+stays as it was: the agenda where it is, the listing where it is.  A day
+designed in the agenda and worked from the bench is what it is for."
+  :type 'boolean
+  :group 'org-upwell)
+
 (defun org-upwell--agenda-follow (&rest _)
   "After agenda context action, show the bench for that heading.
 
-No-op unless `org-agenda-follow-mode' is on.  Does not open files;
-that is expand."
-  (when (and (bound-and-true-p org-agenda-follow-mode)
+Runs when `org-upwell-agenda-follow' or Org's own follow mode is on.
+Does not open files; that is expand."
+  (when (and (or org-upwell-agenda-follow
+                 (bound-and-true-p org-agenda-follow-mode))
              (derived-mode-p 'org-agenda-mode))
     (when-let ((m (or (org-get-at-bol 'org-hd-marker)
                       (org-get-at-bol 'org-marker))))
@@ -847,15 +1104,59 @@ already updates the bench from the agenda row."
     (remove-hook 'post-command-hook #'org-upwell--follow-update)
     (org-upwell--quit-bench-window)))
 
+(defun org-upwell--window-above-bench ()
+  "Return (WINDOW . TYPE) for the window directly above the bench, or nil.
+
+TYPE is what `display-buffer' calls the window: `reuse' for one that
+was already there, `window' for one made here.  An agenda is not
+somewhere to put a file, so an agenda above the bench is split and the
+lower half -- the half touching the bench -- is the answer."
+  (when-let ((bench (get-buffer-window "*org-upwell*" nil)))
+    (let ((above (window-in-direction 'above bench)))
+      (cond
+       ((not (window-live-p above)) nil)
+       ((not (with-current-buffer (window-buffer above)
+               (derived-mode-p 'org-agenda-mode)))
+        (cons above 'reuse))
+       (t (when-let ((win (ignore-errors (split-window above nil 'below))))
+            (cons win 'window)))))))
+
+(defun org-upwell-display-above-bench (buffer alist)
+  "Display BUFFER above the bench.  A `display-buffer' action function.
+
+Returns nil when no bench is showing, which leaves the rest of the
+action list to decide as it always did."
+  (when-let ((found (org-upwell--window-above-bench)))
+    (window--display-buffer buffer (car found) (cdr found) alist)))
+
+(defun org-upwell--agenda-goto-above-bench (fn &rest args)
+  "Call FN with Org displayed above the bench rather than into it.
+
+`org-agenda-goto' picks a window itself, and a short strip is an
+inviting thing to split or replace.  The bench is neither: it is what
+the row was being read with."
+  (let ((display-buffer-overriding-action
+         (if (get-buffer-window "*org-upwell*" nil)
+             '((org-upwell-display-above-bench
+                display-buffer-reuse-window
+                display-buffer-pop-up-window))
+           display-buffer-overriding-action)))
+    (apply fn args)))
+
 (defun org-upwell-follow-setup ()
-  "Hook the bench into agenda follow mode."
+  "Hook the bench into agenda motion, and keep the agenda out of it."
   (with-eval-after-load 'org-agenda
     (advice-add 'org-agenda-do-context-action :after
-                #'org-upwell--agenda-follow)))
+                #'org-upwell--agenda-follow)
+    ;; `org-agenda-show' (SPC, and Org's own follow) goes through this one
+    ;; too, so one piece of advice covers both ways in.
+    (advice-add 'org-agenda-goto :around
+                #'org-upwell--agenda-goto-above-bench)))
 
 (defun org-upwell-follow-teardown ()
   "Remove the agenda follow hook and stop Org follow."
   (advice-remove 'org-agenda-do-context-action #'org-upwell--agenda-follow)
+  (advice-remove 'org-agenda-goto #'org-upwell--agenda-goto-above-bench)
   (when org-upwell-follow-mode
     (org-upwell-follow-mode -1)))
 

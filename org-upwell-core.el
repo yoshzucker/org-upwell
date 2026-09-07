@@ -279,6 +279,17 @@ still a signal, it just has nowhere to rise to."
                 "# Stored items.  Not work.  Not in the agenda.\n")))
     f))
 
+(defun org-upwell-basename (path)
+  "Return the last component of PATH, whether it names a file or a folder.
+
+`file-name-nondirectory' answers nothing at all for a path that ends in a
+separator, and that is the shape a folder arrives in: a watcher reporting
+the window somebody had open, rather than a file they had selected.  An
+item with no name is a blank line on the bench."
+  (and path
+       (let ((base (file-name-nondirectory (directory-file-name path))))
+         (and (not (string-empty-p base)) base))))
+
 (defun org-upwell--heading-plist ()
   "Read the store heading at point into a plist.  Point must be on it."
   (let* ((id (org-entry-get (point) "ID"))
@@ -379,6 +390,17 @@ again, which is one walk per write -- the cost this exists to remove."
                                 org-upwell--store)
                     (list item))))))
 
+(defun org-upwell--store-drop (id)
+  "Drop the item with ID from the held store.
+
+The counterpart of `org-upwell--store-remember': a heading deleted from
+the file has to leave the reading of it too, or the rest of the form
+still sees it."
+  (when org-upwell--store-held
+    (setq org-upwell--store
+          (seq-remove (lambda (m) (equal (plist-get m :id) id))
+                      org-upwell--store))))
+
 (defun org-upwell-find (key value)
   "Return the first item whose KEY equals VALUE.
 
@@ -463,8 +485,7 @@ them, so the last claim can actually be taken off."
           (list :id id
                 :name (or (plist-get item :name)
                           (and existing (plist-get existing :name))
-                          (and (plist-get item :path)
-                               (file-name-nondirectory (plist-get item :path)))
+                          (org-upwell-basename (plist-get item :path))
                           (or (plist-get item :url) "file"))
                 :path (or (plist-get item :path)
                           (and existing (plist-get existing :path)))
@@ -548,6 +569,28 @@ attribute the same trace to the same heading, so a rejection has to be
 written down.  It is a person's answer, and `org-upwell-claims-put'
 keeps it against later provisional writes."
   (org-upwell-claim item heading-id 'rejected))
+
+(defun org-upwell-forget (item)
+  "Delete ITEM's heading from the store.  Return non-nil if one went.
+
+Rejecting says the file does not belong to a heading and keeps the file.
+This says the file is not worth keeping at all -- a download opened once,
+a URL caught by mistake -- so nothing is left to propose it again."
+  (let ((id (plist-get item :id))
+        (file (org-upwell-file)))
+    (when (and id (file-exists-p file))
+      (with-current-buffer (find-file-noselect file)
+        (org-with-wide-buffer
+         (goto-char (point-min))
+         (when (re-search-forward
+                (concat "^[ \t]*:ID:[ \t]+" (regexp-quote id) "[ \t]*$")
+                nil t)
+           (org-back-to-heading t)
+           (delete-region (point) (org-end-of-subtree t t))
+           (unless org-upwell--store-held
+             (let ((save-silently t)) (save-buffer)))
+           (org-upwell--store-drop id)
+           t))))))
 
 (defun org-upwell-claimed-to (heading-id)
   "Return items that claim HEADING-ID, confirmed first.

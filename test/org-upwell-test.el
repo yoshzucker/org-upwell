@@ -1026,6 +1026,415 @@ whole store, so landing there is felt as the typing catching."
             (should (timer--idle-delay org-upwell--sync-timer)))
         (org-upwell-mode -1)))))
 
+;;;; Folders
+
+(ert-deftest org-upwell-test-basename-of-a-folder ()
+  "A folder arrives with a separator on the end, and
+`file-name-nondirectory' answers nothing at all for such a path."
+  (should (equal (org-upwell-basename "/a/b/project/") "project"))
+  (should (equal (org-upwell-basename "/a/b/c.txt") "c.txt"))
+  (should (null (org-upwell-basename "/")))
+  (should (null (org-upwell-basename nil))))
+
+(ert-deftest org-upwell-test-a-folder-trace-is-named-after-the-folder ()
+  "The watcher reports the window a person had open when nothing in it
+was selected.  A nameless item is a blank line on the bench."
+  (let ((tr (org-upwell--trace-from-alist
+             (list (cons "ts" 1757000000)
+                   (cons "app" "Finder")
+                   (cons "title" "project")
+                   (cons "path" "/Users/me/Documents/project/")
+                   (cons "kind" "dir")))))
+    (should (equal (plist-get tr :name) "project"))
+    (should (equal (plist-get (org-upwell-trace-to-spec tr) :name) "project"))))
+
+(ert-deftest org-upwell-test-pinning-a-folder-names-it ()
+  (org-upwell-test--with-dir
+    (let ((folder (file-name-as-directory (expand-file-name "papers" dir))))
+      (make-directory folder t)
+      (should (equal (plist-get (org-upwell--spec-from-path folder) :name)
+                     "papers")))))
+
+(ert-deftest org-upwell-test-open-folder-reveals-the-file-that-is-there ()
+  "Not the folder the path was stored with: a file filed away into a `done'
+folder is resolved first, and the folder to stand in is the new one."
+  (org-upwell-test--with-dir
+    (let* ((a (expand-file-name "sheet.xlsx" dir))
+           (sub (expand-file-name "done" dir))
+           (b (expand-file-name "sheet.xlsx" sub))
+           revealed)
+      (write-region "x" nil a)
+      (let ((m (org-upwell-save (list :path a :name "sheet.xlsx"))))
+        (make-directory sub t)
+        (rename-file a b)
+        (let ((org-upwell-search-roots (list dir)))
+          (cl-letf (((symbol-function 'org-upwell--reveal-external)
+                     (lambda (path) (setq revealed path))))
+            (org-upwell-open-folder (org-upwell-find :id (plist-get m :id))))))
+      (should revealed)
+      (should (equal (file-truename revealed) (file-truename b))))))
+
+(ert-deftest org-upwell-test-open-folder-says-a-url-has-none ()
+  (org-upwell-test--with-dir
+    (let ((m (org-upwell-save (list :url "https://example.com/a"
+                                    :name "a page"))))
+      (should-error (org-upwell-open-folder m) :type 'user-error))))
+
+(ert-deftest org-upwell-test-a-folder-trace-is-known-for-one ()
+  "`kind' cannot answer alone: the Windows watcher calls the folder it
+read a file, so the disk is asked as well."
+  (org-upwell-test--with-dir
+    (let ((folder (expand-file-name "papers" dir))
+          (file (expand-file-name "papers/a.txt" dir)))
+      (make-directory folder t)
+      (write-region "x" nil file)
+      (should (org-upwell-trace-folder-p (list :path folder :kind 'file)))
+      (should (org-upwell-trace-folder-p (list :path "/gone/away/" :kind 'dir)))
+      (should-not (org-upwell-trace-folder-p (list :path file :kind 'file))))))
+
+(ert-deftest org-upwell-test-a-folder-walked-through-is-not-an-item ()
+  "The bench lists things to open.  A folder somebody had open on the way
+to a file is where the work was kept, and the file is already there."
+  (org-upwell-test--with-dir
+    (let* ((folder (expand-file-name "procurement" dir))
+           (sheet (expand-file-name "procurement/quote.csv" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (current-time)))
+      (make-directory folder t)
+      (write-region "x" nil sheet)
+      (org-upwell-test--write-trace
+       (floor (float-time (time-subtract now 1800))) folder)
+      (org-upwell-test--write-trace
+       (floor (float-time (time-subtract now 1500))) sheet)
+      (org-upwell-claim-interval mk (time-subtract now 3600) now)
+      (should (org-upwell-find :path sheet))
+      (should-not (org-upwell-find :path folder))
+      (should (equal (list "quote.csv")
+                     (mapcar (lambda (m) (plist-get m :name))
+                             (org-upwell-claimed-to "T1")))))))
+
+(ert-deftest org-upwell-test-a-spell-of-only-folders-writes-no-id ()
+  "`org-upwell-heading-id' creates an ID in the user's own file.  A spell
+with nothing to claim has no business leaving a mark there."
+  (org-upwell-test--with-dir
+    (let* ((folder (expand-file-name "procurement" dir))
+           (file (org-upwell-test--write-journal "* NEXT Task\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (current-time)))
+      (make-directory folder t)
+      (org-upwell-test--write-trace
+       (floor (float-time (time-subtract now 1800))) folder)
+      (org-upwell-claim-interval mk (time-subtract now 3600) now)
+      (should-not (org-with-point-at mk (org-id-get))))))
+
+(ert-deftest org-upwell-test-sync-leaves-no-unclaimed-folder ()
+  "Off the clock a trace becomes an unclaimed item, a row to deal with
+later.  A folder walked through is not a row to deal with."
+  (org-upwell-test--with-dir
+    (let ((folder (expand-file-name "procurement" dir)))
+      (make-directory folder t)
+      (org-upwell-test--write-trace (floor (float-time (current-time))) folder)
+      (org-upwell-sync 1)
+      (should-not (org-upwell-find :path folder)))))
+
+;;;; What the bench line says
+
+(ert-deftest org-upwell-test-where-is-the-folder-not-the-name ()
+  "The name is already the first thing on the line."
+  (should (equal (org-upwell--item-where (list :path "/tmp/a/b/c.xlsx"))
+                 "/tmp/a/b"))
+  (should (equal (org-upwell--item-where
+                  (list :url "https://contoso.sharepoint.com/sites/a/f.xlsx"))
+                 "contoso.sharepoint.com"))
+  (should (equal (org-upwell--item-where
+                  (list :office "ms-excel:ofe|u|https://share.example/a/f.xlsx"))
+                 "share.example")))
+
+(ert-deftest org-upwell-test-a-folder-too-long-keeps-its-end ()
+  "Cutting the end off leaves every deep path looking like every other.
+
+Two copies of one file are in the same tree up to the last folder or
+two, so the end is the whole of the answer."
+  (let ((cut (org-upwell--tail "/home/me/Documents/project/2026/q3/meeting" 20)))
+    (should (= 20 (string-width cut)))
+    (should (string-suffix-p "q3/meeting" cut))
+    (should-not (string-prefix-p "/home" cut))))
+
+(ert-deftest org-upwell-test-ago-counts-in-the-right-unit ()
+  (cl-flet ((ago (secs)
+              (org-upwell--ago
+               (list :opened (format-time-string "%Y-%m-%dT%H:%M:%S%z"
+                                                 (time-subtract nil secs))))))
+    (should (equal (ago (* 3 3600)) "3h"))
+    (should (equal (ago (* 3 86400)) "3d"))
+    (should (equal (ago (* 70 86400)) "2mo")))
+  (should (equal (org-upwell--ago (list :name "never opened")) "")))
+
+(ert-deftest org-upwell-test-bench-tells-two-of-the-same-name-apart ()
+  "Two files called the same thing, kept in two folders.
+
+A listing that shows only the name asks which one to open and gives
+nothing to answer with."
+  (org-upwell-test--with-dir
+    (let* ((one (expand-file-name "a/quote.csv" dir))
+           (two (expand-file-name "b/quote.csv" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory (file-name-directory one) t)
+      (make-directory (file-name-directory two) t)
+      (write-region "x" nil one)
+      (write-region "x" nil two)
+      (org-upwell-claim
+       (org-upwell-save (list :path one :name "quote.csv" :provenance "pin"))
+       "T1" 'confirmed)
+      (org-upwell-claim
+       (org-upwell-save (list :path two :name "quote.csv" :provenance "drop"))
+       "T1" 'confirmed)
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (let ((text (buffer-string)))
+          (should (= 2 (cl-count-if (lambda (l) (string-match-p "quote\\.csv" l))
+                                    (split-string text "\n"))))
+          (should (string-match-p "/a +pin" text))
+          (should (string-match-p "/b +drop" text)))))))
+
+(ert-deftest org-upwell-test-the-folder-column-is-only-as-wide-as-it-needs ()
+  "On a wide frame, a column padded to the width left over puts a hand's
+width of blank between two short columns."
+  (let ((short (list (list :path "/a/b/x.txt")))
+        (long (list (list :path (concat "/" (make-string 90 ?d) "/x.txt")))))
+    (should (= 12 (cdr (org-upwell--bench-widths short (current-buffer)))))
+    (should (< 12 (cdr (org-upwell--bench-widths long (current-buffer)))))))
+
+;;;; Clock-out
+
+(ert-deftest org-upwell-test-clock-out-shows-the-bench-and-asks-nothing ()
+  "One spell touches several files, and a question naming none of them
+can only be answered by saying yes."
+  (org-upwell-test--with-dir
+    (let* ((org-upwell-review-on-clock-out 'bench)
+           (p (expand-file-name "doc.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (current-time))
+           (from (time-subtract now 3600)))
+      (write-region "x" nil p)
+      (org-upwell-test--write-trace (floor (float-time (time-subtract now 1800))) p)
+      (cl-letf (((symbol-function 'read-char-choice)
+                 (lambda (&rest _) (error "org-upwell asked at clock-out"))))
+        (should (org-upwell-review-interval mk from now)))
+      (should (get-buffer-window "*org-upwell*" nil))
+      (should (eq 'provisional
+                  (org-upwell-claim-status
+                   (plist-get (org-upwell-find :path p) :claims) "T1"))))))
+
+(ert-deftest org-upwell-test-the-question-names-the-files ()
+  "`ask' is not the default any more, but it is still asked of a person."
+  (org-upwell-test--with-dir
+    (let* ((org-upwell-review-on-clock-out 'ask)
+           (p (expand-file-name "doc.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (current-time))
+           (from (time-subtract now 3600))
+           prompt)
+      (write-region "x" nil p)
+      (org-upwell-test--write-trace (floor (float-time (time-subtract now 1800))) p)
+      (cl-letf (((symbol-function 'read-char-choice)
+                 (lambda (p &rest _) (setq prompt p) ?\r)))
+        (org-upwell-review-interval mk from now))
+      (should prompt)
+      (should (string-match-p "doc\\.xlsx" prompt)))))
+
+;;;; Which heading the agenda row is
+
+(ert-deftest org-upwell-test-agenda-row-with-only-org-marker ()
+  "A row from a custom block carries `org-marker' and no `org-hd-marker'.
+
+Reading one of the two made V in such an agenda fall through to a
+completing-read of every heading, which looks like a different command."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (agenda (get-buffer-create "*Org Agenda*")))
+      (unwind-protect
+          (with-current-buffer agenda
+            (org-agenda-mode)
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (insert (propertize "  Task\n" 'org-marker mk)))
+            (goto-char (point-min))
+            (should (equal mk (org-upwell--current-heading-marker))))
+        (kill-buffer agenda)))))
+
+(ert-deftest org-upwell-test-expand-with-a-prefix-asks-anyway ()
+  "C-u C-c v is the way to the list when point is on a heading."
+  (org-upwell-test--with-dir
+    (let* ((org-upwell-expand-max 0)
+           (org-upwell-expand-open-location nil)
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (asked 0))
+      (cl-letf (((symbol-function 'org-upwell--read-heading-marker)
+                 (lambda () (setq asked (1+ asked)) mk)))
+        (with-current-buffer (marker-buffer mk)
+          (goto-char mk)
+          (let ((current-prefix-arg '(4)))
+            (call-interactively #'org-upwell-expand))
+          (should (= 1 asked))
+          (let ((current-prefix-arg nil))
+            (call-interactively #'org-upwell-expand))
+          (should (= 1 asked)))))))
+
+;;;; Keeping and dropping from the bench
+
+(ert-deftest org-upwell-test-bench-drop-has-the-no-stay-said ()
+  "The intersection runs again on a timer.  A claim merely forgotten
+comes back on the next pass, so dropping has to be written down."
+  (org-upwell-test--with-dir
+    (let* ((p (expand-file-name "doc.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (write-region "x" nil p)
+      (org-upwell-claim
+       (org-upwell-save (list :path p :name "doc.xlsx" :provenance "trace"))
+       "T1" 'provisional)
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "doc.xlsx" nil t))
+        (beginning-of-line)
+        (org-upwell-bench-drop)
+        (should-not (plist-get org-upwell-bench-domain :items)))
+      (should (eq 'rejected
+                  (org-upwell-claim-status
+                   (plist-get (org-upwell-find :path p) :claims) "T1"))))))
+
+(ert-deftest org-upwell-test-bench-keep-confirms ()
+  (org-upwell-test--with-dir
+    (let* ((p (expand-file-name "doc.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (write-region "x" nil p)
+      (org-upwell-claim
+       (org-upwell-save (list :path p :name "doc.xlsx" :provenance "trace"))
+       "T1" 'provisional)
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "doc.xlsx" nil t))
+        (beginning-of-line)
+        (org-upwell-bench-keep))
+      (should (eq 'confirmed
+                  (org-upwell-claim-status
+                   (plist-get (org-upwell-find :path p) :claims) "T1"))))))
+
+(ert-deftest org-upwell-test-bench-forget-deletes-the-item ()
+  "Dropping keeps the item and says it is not this heading's.  Forgetting
+leaves nothing to propose it again anywhere."
+  (org-upwell-test--with-dir
+    (let* ((p (expand-file-name "doc.xlsx" dir))
+           (other (expand-file-name "keep.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (write-region "x" nil p)
+      (write-region "x" nil other)
+      (org-upwell-claim
+       (org-upwell-save (list :path p :name "doc.xlsx" :provenance "trace"))
+       "T1" 'confirmed)
+      (org-upwell-claim
+       (org-upwell-save (list :path other :name "keep.xlsx" :provenance "pin"))
+       "T1" 'confirmed)
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "doc.xlsx" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (org-upwell-bench-forget)))
+      (should-not (org-upwell-find :path p))
+      (should (org-upwell-find :path other)))))
+
+;;;; The window the file lands in
+
+(ert-deftest org-upwell-test-nothing-above-a-bench-that-is-not-showing ()
+  "With no strip on the frame, this action function has no opinion."
+  (org-upwell-test--with-dir
+    (should-not (org-upwell-display-above-bench (current-buffer) nil))))
+
+(ert-deftest org-upwell-test-the-file-reuses-the-window-above-the-bench ()
+  "The pane that was reading the entry keeps reading it; no new window."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (delete-other-windows)
+      (set-window-buffer (selected-window) (marker-buffer mk))
+      (org-upwell-bench (org-upwell-domain mk))
+      (let* ((bench (get-buffer-window "*org-upwell*" nil))
+             (above (window-in-direction 'above bench))
+             (n (length (window-list nil 'nomini)))
+             (win (org-upwell-display-above-bench (marker-buffer mk) nil)))
+        (should (eq win above))
+        (should (= n (length (window-list nil 'nomini))))))))
+
+(ert-deftest org-upwell-test-the-agenda-is-not-where-the-file-goes ()
+  "C-i from the agenda must not put the file in the agenda's window, and
+must not put it in the strip either.  It is cut in between."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (agenda (get-buffer-create "*Org Agenda*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer agenda (org-agenda-mode))
+            (delete-other-windows)
+            (set-window-buffer (selected-window) agenda)
+            (org-upwell-bench (org-upwell-domain mk))
+            (let* ((bench (get-buffer-window "*org-upwell*" nil))
+                   (win (org-upwell-display-above-bench (marker-buffer mk) nil)))
+              (should (window-live-p win))
+              (should-not (eq win bench))
+              (should (eq bench (window-in-direction 'below win)))
+              (should (eq (window-buffer win) (marker-buffer mk)))
+              (should (get-buffer-window agenda nil))))
+        (kill-buffer agenda)))))
+
+(ert-deftest org-upwell-test-bench-follows-the-agenda-on-its-own ()
+  "Org's own follow opens the entry's file in another window, which is the
+movement this setting exists to do without."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (org-upwell-agenda-follow t)
+           (org-agenda-follow-mode nil)
+           (agenda (get-buffer-create "*Org Agenda*"))
+           drawn)
+      (unwind-protect
+          (with-current-buffer agenda
+            (org-agenda-mode)
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (insert (propertize "  Task\n" 'org-hd-marker mk)))
+            (goto-char (point-min))
+            (cl-letf (((symbol-function 'org-upwell--follow-draw)
+                       (lambda (m) (setq drawn m))))
+              (org-upwell--agenda-follow))
+            (should (equal drawn mk)))
+        (kill-buffer agenda)))))
+
 (provide 'org-upwell-test)
 
 ;;; org-upwell-test.el ends here

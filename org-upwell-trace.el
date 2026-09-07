@@ -76,8 +76,8 @@ line parse the same way."
             :office (or office (and url (org-upwell-mint-office url)))
             :file-id file-id
             :kind kind
-            :name (or (and path (file-name-nondirectory path))
-                      title
+            :name (or (org-upwell-basename path)
+                      (and title (not (string-empty-p title)) title)
                       url)))))
 
 (defun org-upwell-read-trace-file (file)
@@ -174,6 +174,20 @@ the clock-out instant belongs to the next spell, not both."
           (puthash key t seen)
           (push tr out))))
     out))
+
+(defun org-upwell-trace-folder-p (trace)
+  "Return non-nil when TRACE is a folder somebody had open.
+
+A folder in front is where the work was kept, not a thing to open from a
+heading, and the bench is a list of things to open.  One a person put
+there on purpose -- a pin, a drop -- is a different act and is kept.
+
+`kind\=' cannot answer this on its own: the Windows watcher reports the
+folder it read as a file, and a selected item may be a folder too.  So
+the disk is asked, after `kind\=' has had its say."
+  (let ((path (plist-get trace :path)))
+    (or (eq (plist-get trace :kind) 'dir)
+        (and path (file-directory-p path)))))
 
 (defun org-upwell-trace-to-spec (trace)
   "Turn TRACE into an item spec plist."

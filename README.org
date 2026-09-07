@@ -90,7 +90,7 @@ For a one-off test session only, and not how it should run day to day:
 
 | Command | What it does |
 |---|---|
-| ~org-upwell-expand~ | Expand the heading at point / the agenda row / the running clock. Opens files. If the bench is already showing, switches it to this heading. Neither the bench nor an agenda loses its window |
+| ~org-upwell-expand~ | Expand the heading at point / the agenda row / the running clock. Opens files. If the bench is already showing, switches it to this heading. Neither the bench nor an agenda loses its window. With a prefix argument, always choose the heading from a list |
 | ~org-upwell-expand-clock~ | Expand whatever is being clocked (emacsclient-friendly) |
 | ~org-upwell-pin~ | Catch a file or URL. Clock or heading at point → confirmed claim; else unclaimed |
 | ~org-upwell-create~ | New xlsx/pptx/…, claimed, no save-location prompt |
@@ -100,8 +100,28 @@ For a one-off test session only, and not how it should run day to day:
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
 | ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
 
-Agenda ~F~ (follow mode), with ~org-upwell-mode~ on, also updates the bench
-from the agenda row. It does not open files.
+On the bench, marks decide what a command acts on: the marked items when
+there are any, the line point is on when there are none.
+
+| Key | On the bench |
+|---|---|
+| ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones, with the OS |
+| ~e~ | Visit inside Emacs, in another window |
+| ~f~ | Open the folder the file is in, with the file selected |
+| ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
+| ~c~ | Keep the claim on this heading |
+| ~d~ | Take it off this heading, and have that stay said |
+| ~D~ | Delete the item from the store. The file is not touched |
+| ~r~ | Move it to another heading |
+| ~+~ / ~L~ | Add a file / a URL to this heading |
+| ~o~ | Visit ~upwell.org~ at this item |
+| ~g~ / ~q~ | Redraw / dismiss the strip |
+
+With ~org-upwell-agenda-follow~ on, moving in the agenda redraws the bench
+for the row. Org's own follow (~F~) opens the entry's file in another
+window as well; this one draws the listing and nothing else, so the frame
+stays as it was. Either way, ~TAB~ in the agenda puts the file in the
+window above the bench rather than in the strip.
 
 From a launcher, a hotkey, or anything else that can run a command, to
 expand whatever is being clocked:
@@ -120,10 +140,22 @@ Two clocks, not one.
 
 | What | When | Who |
 |---|---|---|
-| A *trace* (path/URL + unix time) | every 15s, only if the front document changed; also new files in the download directory | the watcher, Emacs need not be running |
+| A *trace* (path/URL + unix time) | every 15s, only if the front document changed -- for a browser, only when the window title says the tab or the page did; also new files in the download directory | the watcher, Emacs need not be running |
 | A *provisional claim* | Emacs intersects traces with CLOCK intervals: a 60s timer while Emacs is up, immediately on clock-out, immediately after a clock is filled in from the agenda | Emacs |
-| A *confirmed claim* | the review at clock-out or after a fill (Enter keeps, ~n~ rejects, ~r~ reassigns). An explicit pin or drop is confirmed at once | you |
-| A *rejection* | the same review's ~n~ / ~r~. Written down, because the intersection runs again a minute later and would otherwise propose the same file | you |
+| A *confirmed claim* | ~c~ on the bench, which clock-out opens for the heading it just closed. An explicit pin or drop is confirmed at once | you |
+| A *rejection* | ~d~ or ~r~ on the bench. Written down, because the intersection runs again a minute later and would otherwise propose the same file | you |
+
+Clock-out shows the bench and asks nothing: one spell often touches
+several files, and a question that names none of them can only be
+answered by saying yes. The claims are already written by then, and the
+listing marks them as provisional until ~c~ keeps them.
+~org-upwell-review-on-clock-out~ can go back to the older single-line
+question, or say nothing at all.
+
+A folder somebody had open is recorded as a trace and does not become an
+item: the bench lists things to open, and the folder a file was found in
+is already on the file's line -- ~f~ goes there. A folder pinned or
+dropped on purpose is kept, like any other pin.
 
 The watcher does not know Org. If Emacs is closed, traces pile up and wait.
 Nothing is guessed when there is no clock: that file becomes an unclaimed

@@ -31,12 +31,28 @@
 (require 'seq)
 (require 'cl-lib)
 
-(defcustom org-upwell-review-on-clock-out t
-  "When non-nil, offer to confirm provisional claims at clock-out.
+;; The bench lives in org-upwell-expand, which requires this file's store
+;; through the core.  Clock-out shows the listing when it is loaded.
+(declare-function org-upwell-bench "org-upwell-expand" (&optional domain))
+(declare-function org-upwell-domain "org-upwell-expand" (marker))
 
-Only asked when this spell actually produced new attributions.  A clock
-with no matching traces is silent -- there is nothing to confirm."
-  :type 'boolean
+(defcustom org-upwell-review-on-clock-out 'bench
+  "What clock-out does with the claims the spell just produced.
+
+`bench' shows the listing for the heading and asks nothing.  The claims
+stay provisional, which is what the listing marks them as, and the keys
+that keep or drop them are on the bench.  One spell often touches several
+files, and a question that names none of them can only be answered by
+saying yes.
+
+`ask' is the older single-line question at the minibuffer.
+
+Nil records and says nothing.  Nothing is lost either way: the claims are
+already written by then.  A spell with no matching traces is silent under
+all three."
+  :type '(choice (const :tag "Show the bench" bench)
+                 (const :tag "Ask in the minibuffer" ask)
+                 (const :tag "Say nothing" nil))
   :group 'org-upwell)
 
 (defcustom org-upwell-inherit-on-clock-in t
@@ -132,7 +148,12 @@ Already-confirmed claims for this heading are left alone, and items a
 person rejected for it are not proposed again.  PROVENANCE is recorded
 on a newly created item (default `trace')."
 
-  (let* ((traces (org-upwell-unique-traces (org-upwell-traces-in from to)))
+  (let* ((traces (seq-remove #'org-upwell-trace-folder-p
+                             (org-upwell-unique-traces
+                              (org-upwell-traces-in from to))))
+         ;; Filtered before the id: `org-upwell-heading-id' writes an ID
+         ;; into the user's file, and a spell that only walked through
+         ;; folders has nothing to claim and no reason to leave a mark.
          (heading-id (and traces (org-upwell-heading-id marker)))
          (prov (or provenance "trace"))
          claimed)
@@ -160,7 +181,9 @@ still findable and still a signal."
           (segments (org-upwell-clock-segments days))
           (from (org-upwell--day-start (1- days)))
           (to (current-time))
-          (traces (org-upwell-unique-traces (org-upwell-read-traces from to)))
+          (traces (seq-remove #'org-upwell-trace-folder-p
+                              (org-upwell-unique-traces
+                               (org-upwell-read-traces from to))))
           (n 0))
      (dolist (seg segments)
        (when (org-upwell-claim-interval
@@ -190,14 +213,39 @@ still findable and still a signal."
               (plist-get item :url)
               "")))
 
-(defun org-upwell-review-interval (marker from to)
-  "Ask about provisional claims in [FROM, TO) on MARKER.
+(defun org-upwell--review-names (items width)
+  "Names of ITEMS, joined, cut to WIDTH columns."
+  (truncate-string-to-width
+   (mapconcat (lambda (m) (or (plist-get m :name) "?")) items ", ")
+   width nil nil t))
 
-Enter keeps them (and promotes to confirmed).  `n' rejects them, which
-is written down: the intersection runs again every minute and would
-otherwise put the same files back.  `r' reassigns one.  Called from
-clock-out and from after `org-foresight-clock-fill'; silent when there
-is nothing new."
+(defun org-upwell--review-ask (items heading-id title)
+  "Ask in the minibuffer what to do with ITEMS on HEADING-ID, called TITLE."
+  (let ((key (read-char-choice
+              (format "%s → %s  [RET keep / n reject / r reassign]: "
+                      (org-upwell--review-names items 50)
+                      (truncate-string-to-width (or title "") 30 nil nil t))
+              '(?\r ?n ?r ?q))))
+    (pcase key
+      (?n
+       (dolist (m items)
+         (org-upwell-reject m heading-id))
+       (message "org-upwell: dropped %d" (length items)))
+      (?r
+       (org-upwell--reassign-loop items heading-id))
+      (_
+       (dolist (m items)
+         (org-upwell-claim m heading-id 'confirmed))
+       (message "org-upwell: kept %d on %s" (length items) title)))))
+
+(defun org-upwell-review-interval (marker from to)
+  "Answer for the provisional claims in [FROM, TO) on MARKER.
+
+The claims are already written by the time this runs; what it decides is
+whether to show them, ask about them, or say nothing.  See
+`org-upwell-review-on-clock-out'.  Called from clock-out and from after
+`org-foresight--file-clocked'; silent when there is nothing new.  Returns
+the items either way."
   (org-upwell-with-store
    (let* ((heading-id (org-upwell-heading-id marker))
           (items (seq-filter
@@ -208,28 +256,23 @@ is nothing new."
                  (org-upwell-claim-interval marker from to)))
          (title (org-with-point-at marker
                   (org-get-heading t t t t))))
-    (cond
-     ((null items) nil)
-     ((not org-upwell-review-on-clock-out)
-      items)
-     (t
-      (let ((key (read-char-choice
-                  (format "%d file(s) under \"%s\"  [RET keep / n reject / r reassign]: "
-                          (length items)
-                          (truncate-string-to-width (or title "") 40 nil nil t))
-                  '(?\r ?n ?r ?q))))
-        (pcase key
-          (?n
-           (dolist (m items)
-             (org-upwell-reject m heading-id))
-           (message "org-upwell: dropped %d" (length items)))
-          (?r
-           (org-upwell--reassign-loop items heading-id))
-          (_
-           (dolist (m items)
-             (org-upwell-claim m heading-id 'confirmed))
-           (message "org-upwell: kept %d on %s" (length items) title))))
-      items)))))
+    (when items
+      (pcase org-upwell-review-on-clock-out
+        ('ask (org-upwell--review-ask items heading-id title))
+        ('bench (org-upwell--review-bench marker items))
+        (_ nil)))
+    items)))
+
+(defun org-upwell--review-bench (marker items)
+  "Show the bench for MARKER, and say how many claims ITEMS brought.
+
+The window is not selected: clock-out is often followed by typing that
+was already begun, and a listing that takes the keyboard eats it."
+  (when (fboundp 'org-upwell-bench)
+    (save-selected-window
+      (org-upwell-bench (org-upwell-domain marker)))
+    (message "org-upwell: %d file(s) attributed -- c keeps, d drops"
+             (length items))))
 
 (defun org-upwell--reassign-loop (items from-id)
   "Interactively reassign ITEMS away from FROM-ID."

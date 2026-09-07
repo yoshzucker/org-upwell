@@ -44,7 +44,11 @@ the pin is unclaimed -- catching and deciding stay different acts."
          org-upwell-bench-domain
          (plist-get org-upwell-bench-domain :marker)))
    ((and (derived-mode-p 'org-agenda-mode)
-         (org-get-at-bol 'org-hd-marker)))
+         ;; A row put there by a custom block may carry only `org-marker'.
+         ;; Reading just one of the two is how the agenda came to fall
+         ;; through to a completing-read of every heading.
+         (or (org-get-at-bol 'org-hd-marker)
+             (org-get-at-bol 'org-marker))))
    ((and (markerp org-clock-hd-marker)
          (marker-buffer org-clock-hd-marker))
     org-clock-hd-marker)
@@ -55,7 +59,7 @@ the pin is unclaimed -- catching and deciding stay different acts."
   (let* ((path (and path (string-trim path)))
          (url (and path (org-upwell--looks-like-url path) path))
          (file (and path (not url) (expand-file-name path))))
-    (list :name (or (and file (file-name-nondirectory file))
+    (list :name (or (org-upwell-basename file)
                     url
                     "file")
           :path (and file (file-exists-p file) file)
