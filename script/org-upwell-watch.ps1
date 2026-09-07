@@ -62,33 +62,46 @@ function Get-OfficeFullName($progId, $property) {
 }
 
 $last = ''
+$lastBrowser = ''
 $lastDl = Get-Date
 $downloads = Join-Path $env:USERPROFILE 'Downloads'
 
 while ($true) {
     try {
         $hwnd = [OrgUpwellWin]::GetForegroundWindow()
-        $pid = 0
-        [void][OrgUpwellWin]::GetWindowThreadProcessId($hwnd, [ref]$pid)
-        $proc = Get-Process -Id $pid
+        # Not $pid: that name is PowerShell's own, and read-only.  Writing
+        # to it fails quietly here and every window looks like this script.
+        $procId = 0
+        [void][OrgUpwellWin]::GetWindowThreadProcessId($hwnd, [ref]$procId)
+        $proc = Get-Process -Id $procId
         $exe = $proc.ProcessName
         $title = $proc.MainWindowTitle
         $path = ''
         $url = ''
         $kind = 'file'
+        $isBrowser = $false
 
         switch -Regex ($exe) {
             '^EXCEL'    { $path = Get-OfficeFullName 'Excel.Application' 'ActiveWorkbook' }
             '^POWERPNT' { $path = Get-OfficeFullName 'PowerPoint.Application' 'ActivePresentation' }
             '^WINWORD'  { $path = Get-OfficeFullName 'Word.Application' 'ActiveDocument' }
             '^(msedge|chrome|firefox)$' {
+                # Same rule as the AutoHotkey watcher: the title changes
+                # whenever the tab or the page does, and reading the address
+                # bar costs a UI Automation walk.
                 $kind = 'url'
-                $helper = Join-Path $PSScriptRoot 'front-url.ps1'
-                if (Test-Path $helper) {
-                    $url = (& $helper | Select-Object -First 1)
+                $isBrowser = $true
+                $stamp = "$($hwnd.ToInt64())|$title"
+                if ($stamp -ne $lastBrowser) {
+                    $lastBrowser = $stamp
+                    $helper = Join-Path $PSScriptRoot 'front-url.ps1'
+                    if (Test-Path $helper) {
+                        $url = (& $helper -Hwnd $hwnd.ToInt64() | Select-Object -First 1)
+                    }
                 }
             }
         }
+        if (-not $isBrowser) { $lastBrowser = '' }
 
         if ($path -match '^https?://') {
             $url = $path

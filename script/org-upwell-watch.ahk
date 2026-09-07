@@ -30,6 +30,7 @@ DirCreate outDir
 
 downloads := EnvGet("USERPROFILE") "\Downloads"
 lastFront := ""
+lastBrowser := ""
 lastDl := A_Now
 pollMs := 15000
 
@@ -37,7 +38,7 @@ SetTimer Watch, pollMs
 Watch()
 
 Watch() {
-    global lastFront, lastDl, downloads
+    global lastFront, lastBrowser, lastDl, downloads
     try {
         hwnd := WinExist("A")
         if !hwnd {
@@ -49,6 +50,14 @@ Watch() {
         path := ""
         url := ""
         kind := "file"
+        ; Leaving the browser and coming back is a new appearance, and the
+        ; document in front is worth recording again.  Only an unbroken
+        ; spell on one tab is the silent case.
+        isBrowser := (InStr(exe, "msedge") = 1 || InStr(exe, "chrome") = 1
+                      || InStr(exe, "firefox") = 1)
+        if !isBrowser {
+            lastBrowser := ""
+        }
 
         if (InStr(exe, "EXCEL") = 1) {
             path := OfficeFullName("Excel.Application", "ActiveWorkbook")
@@ -56,12 +65,22 @@ Watch() {
             path := OfficeFullName("PowerPoint.Application", "ActivePresentation")
         } else if (InStr(exe, "WINWORD") = 1) {
             path := OfficeFullName("Word.Application", "ActiveDocument")
-        } else if (InStr(exe, "msedge") = 1 || InStr(exe, "chrome") = 1
-                   || InStr(exe, "firefox") = 1) {
-            url := BrowserUrl(exe)
+        } else if (isBrowser) {
+            ; The title is free and the URL costs a process, so the title
+            ; decides whether to pay: a tab or a page cannot change without
+            ; it changing.  Staying on one tab is silent, which is what the
+            ; window title is asked here to prove.
             kind := "url"
+            stamp := hwnd "|" title
+            if (stamp != lastBrowser) {
+                lastBrowser := stamp
+                url := BrowserUrl(hwnd)
+            }
         } else if (InStr(exe, "explorer") = 1) {
-            path := ExplorerSelected()
+            path := ExplorerSelected(&folderOnly)
+            if (folderOnly) {
+                kind := "dir"
+            }
         }
 
         if (IsHttp(path)) {
@@ -97,23 +116,37 @@ OfficeFullName(progId, active) {
     return ""
 }
 
-BrowserUrl(_exe) {
+BrowserUrl(hwnd) {
     ; Address bar via Ctrl+L would steal focus and is not silent.
     ; UI Automation lives in the sibling .ps1; this helper calls it
     ; only for browser windows, so Excel polling stays in-process.
+    ;
+    ; Run, not Exec: Exec cannot hide the console it starts, and a
+    ; console appearing every sample takes the keyboard with it.  Hidden
+    ; means no pipe to read, so the helper is given a file to write and
+    ; the window handle this script already has.
     script := A_ScriptDir "\front-url.ps1"
     if !FileExist(script) {
         return ""
     }
+    out := A_Temp "\org-upwell-url.txt"
+    url := ""
     try {
-        return Trim(ComObject("WScript.Shell").Exec(
-            'powershell -NoProfile -ExecutionPolicy Bypass -File "' script '"').StdOut.ReadAll())
+        RunWait('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass'
+                . ' -File "' script '" -Hwnd ' hwnd ' -Out "' out '"', , "Hide")
     } catch {
         return ""
     }
+    try url := Trim(FileRead(out, "UTF-8"))
+    try FileDelete out
+    return url
 }
 
-ExplorerSelected() {
+ExplorerSelected(&folderOnly) {
+    ; folderOnly says the answer is the window's own folder rather than
+    ; something picked out in it.  Emacs keeps files and drops the folder
+    ; somebody merely had open, and cannot tell the two apart from a path.
+    folderOnly := false
     try {
         shell := ComObject("Shell.Application")
         hwnd := WinExist("A")
@@ -123,6 +156,7 @@ ExplorerSelected() {
                     sel := window.Document.SelectedItems
                     if (sel.Count > 0)
                         return sel.Item(0).Path
+                    folderOnly := true
                     return window.Document.Folder.Self.Path
                 }
             } catch {
