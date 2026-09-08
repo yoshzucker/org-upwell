@@ -30,7 +30,6 @@
   "Run BODY with org-directory and traces pointed at a scratch dir."
   (declare (indent 0))
   `(let* ((dir (file-name-as-directory (make-temp-file "org-upwell" t)))
-
           (org-directory dir)
           (org-upwell-directory nil)
           (org-agenda-files nil)
