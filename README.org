@@ -117,6 +117,27 @@ there are any, the line point is on when there are none.
 | ~o~ | Visit ~upwell.org~ at this item |
 | ~g~ / ~q~ | Redraw / dismiss the strip |
 
+** What a row shows, and what it cannot
+
+A row is columns, and a column is a width. The name is cut from its end and
+the folder from its beginning, which are opposite on purpose: a name says
+what a thing is in its first word, and a folder says which of two it is in
+its last. A host is cut like a name — what tells two of them apart is the
+first label, and every one of them ends in the same handful of characters.
+
+The echo area says the line at point in full: the name and where it actually
+is, which are the two things the columns had to shorten.
+~org-upwell-bench-eldoc~ turns it off.
+
+Names that came from a browser are trimmed before they are stored. A browser
+writes its own name on every window it owns, and where the watcher can read
+nothing finer than the window — Windows, which has no scripting bridge to ask
+the tab — that suffix arrives on every URL alike, several columns of it, the
+same on every row. ~org-upwell-title-noise~ is the list; it takes one segment
+off the end, because nothing tells a profile somebody named apart from the
+last part of a title and a rule that took two would eat real subjects. Edge's
+default =Profile N= is listed by name.
+
 With ~org-upwell-agenda-follow~ on, moving in the agenda redraws the bench
 for the row. Org's own follow (~F~) opens the entry's file in another
 window as well; this one draws the listing and nothing else, so the frame

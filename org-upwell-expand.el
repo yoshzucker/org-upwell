@@ -26,6 +26,7 @@
 (require 'seq)
 (require 'cl-lib)
 (require 'button)
+(require 'eldoc)
 
 (declare-function w32-shell-execute "w32fns.c"
                   (operation document &optional parameters show-flag))
@@ -660,6 +661,19 @@ answered by the folder, and by nothing else on the line."
      (url (or (org-upwell--url-host url) url))
      (t ""))))
 
+(defun org-upwell--fit-where (item width)
+  "Where ITEM is, cut to WIDTH from whichever end can be spared.
+
+A folder is cut from the left: two copies of one file sit in the same tree
+down to the last name or two, so the end is the whole of the answer.  A host
+is cut from the right, because it says the same thing the other way round --
+what tells two of them apart is the first label, and every one of them ends
+in the same handful of characters."
+  (let ((where (org-upwell--item-where item)))
+    (if (plist-get item :path)
+        (org-upwell--tail where width)
+      (truncate-string-to-width where width nil nil t))))
+
 (defun org-upwell--ago (item)
   "How long since ITEM was last opened, or caught.  Empty when neither is known."
   (let* ((stamp (or (plist-get item :opened) (plist-get item :captured)))
@@ -703,7 +717,12 @@ width of blank between two short columns."
          (marked (and id (member id org-upwell-bench-marked)))
          (name-w (car widths))
          (where-w (cdr widths))
-         (shown (org-upwell--tail name name-w))
+         ;; The name keeps its beginning and the folder keeps its end, which
+         ;; are opposite on purpose: a name says what the thing is in its
+         ;; first word, and a folder says which of two it is in its last.
+         ;; Cutting a name from the same end as a folder left every row that
+         ;; came from one browser reading the same three words.
+         (shown (truncate-string-to-width name name-w nil nil t))
          (start (point)))
     (insert (if marked "* " "  "))
     (insert-text-button
@@ -718,8 +737,7 @@ width of blank between two short columns."
      (string-trim-right
       (concat
        (propertize (org-upwell--pad
-                    (org-upwell--tail (org-upwell--item-where m) where-w)
-                    where-w)
+                    (org-upwell--fit-where m where-w) where-w)
                    'face 'shadow)
        "  "
        (propertize (org-upwell--pad (or (plist-get m :provenance) "") 6)
@@ -956,6 +974,33 @@ recording at all.  The file on disk is not touched."
   (interactive "sAdd URL to this heading: ")
   (org-upwell-pin url (plist-get org-upwell-bench-domain :marker) "pin"))
 
+(defcustom org-upwell-bench-eldoc t
+  "Whether the bench says in the echo area what the line at point is.
+
+A row is a set of columns, and a column is a width: a name longer than its
+own is cut, and two files kept in the same tree are told apart by a folder
+that has been cut as well.  The row is what a page of them is *for* -- it is
+read down, at a glance -- so the answer to \"which one is this, exactly\" goes
+where a glance already goes when it wants more, rather than into a wider
+column that would cost every other row."
+  :type 'boolean
+  :group 'org-upwell)
+
+(defun org-upwell-bench-eldoc-function (&rest _)
+  "Say what the item on this line is, whole.
+
+For `eldoc-documentation-functions\='.  The name in full and where it actually
+is: the two things the row had to shorten."
+  (when (and org-upwell-bench-eldoc
+             (derived-mode-p 'org-upwell-bench-mode))
+    (when-let ((m (org-upwell--bench-item-at-point)))
+      (let ((where (or (and (plist-get m :path)
+                            (abbreviate-file-name (plist-get m :path)))
+                       (plist-get m :url)
+                       (plist-get m :office))))
+        (concat (or (plist-get m :name) "?")
+                (if where (concat "  " where) ""))))))
+
 (defvar org-upwell-bench-mode-map (make-sparse-keymap))
 (let ((map org-upwell-bench-mode-map))
   (set-keymap-parent map special-mode-map)
@@ -996,6 +1041,9 @@ not cut another one until the heading changes.
 is what tells two files of the same name apart, so it is also where to
 go and look.
 
+The echo area says what the line at point is, in full -- the name and
+where it actually is, which are the two things a column had to shorten.
+
 `c' and `d' are the two answers to a claim the clock proposed: keep it
 on this heading, or take it off and have that stay said.  `D' deletes
 the item from the store.  `r' moves it to another heading.  `+' and
@@ -1004,6 +1052,9 @@ marks, and on this line when there are none.
 
 \\{org-upwell-bench-mode-map}"
   (setq truncate-lines t)
+  (add-hook 'eldoc-documentation-functions
+            #'org-upwell-bench-eldoc-function nil t)
+  (eldoc-mode 1)
   (when (and (boundp 'evil-state) (fboundp 'evil-emacs-state))
     (evil-emacs-state)))
 

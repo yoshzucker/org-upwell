@@ -77,7 +77,8 @@ line parse the same way."
             :file-id file-id
             :kind kind
             :name (or (org-upwell-basename path)
-                      (and title (not (string-empty-p title)) title)
+                      (let ((clean (org-upwell--strip-title-noise title)))
+                        (and clean (not (string-empty-p clean)) clean))
                       url)))))
 
 (defun org-upwell-read-trace-file (file)
@@ -174,6 +175,44 @@ the clock-out instant belongs to the next spell, not both."
           (puthash key t seen)
           (push tr out))))
     out))
+
+(defcustom org-upwell-title-noise
+  '(" - Microsoft Edge\\'"
+    " - Profile [0-9]+\\'"
+    " - Google Chrome\\'"
+    " [-\u2014] Mozilla Firefox\\'"
+    " - Chromium\\'"
+    " - Brave\\'")
+  "Regexps stripped from a window title before it becomes an item\='s name.
+
+A browser puts its own name on the end of every window it owns, and some put
+the profile there too.  Where the watcher can only read the window title --
+Windows, where there is no scripting bridge to ask the tab -- that suffix
+arrives on every URL alike.  It is the same handful of characters on every
+row, and it is the part a narrow column has least reason to keep.
+
+Anchored at the end, so a page actually about a browser keeps its subject.
+
+One segment only.  Edge writes the profile between the page and its own name,
+and it is tempting to take both -- but nothing tells a profile apart from the
+last part of a title, so a rule that took two would quietly eat the subject of
+every page whose title happens to end in a phrase.  Losing real words is worse
+than keeping a few noisy ones; add a rule here for a profile that is actually
+in the way.
+
+Edge\='s default profile name is the exception, and is listed: \"Profile 3\" at
+the end of a title is a profile and not a subject.  A profile somebody has
+named is not guessable, and is left."
+  :type '(repeat regexp)
+  :group 'org-upwell)
+
+(defun org-upwell--strip-title-noise (title)
+  "Return TITLE without whatever `org-upwell-title-noise\=' matches."
+  (when title
+    (let ((out title))
+      (dolist (re org-upwell-title-noise)
+        (setq out (replace-regexp-in-string re "" out)))
+      (string-trim out))))
 
 (defun org-upwell-trace-folder-p (trace)
   "Return non-nil when TRACE is a folder somebody had open.
