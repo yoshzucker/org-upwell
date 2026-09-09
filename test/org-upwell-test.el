@@ -1272,6 +1272,39 @@ reads as the same dozen characters."
       ;; and the folder still keeps its end
       (should (string-suffix-p "procurement" (org-upwell--fit-where dir 14))))))
 
+(ert-deftest org-upwell-test-the-bench-keys-are-announced ()
+  "Eldoc keeps an obarray of the commands it will speak after and says
+nothing after anything else.  Motion was in it and the bench\='s own keys were
+not, so the line was announced when `n' moved to it and silent when `m' did
+-- and `m' marks and moves down, so the line it lands on is exactly the one
+somebody is about to act on."
+  (dolist (command '("org-upwell-bench-toggle-mark"
+                     "org-upwell-bench-unmark"
+                     "org-upwell-bench-drop"
+                     "org-upwell-bench"))
+    (should (intern-soft command eldoc-message-commands))))
+
+(ert-deftest org-upwell-test-marking-says-where-it-landed ()
+  "And what it says is the line it moved to, not the one it marked."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (dolist (name '("alpha.txt" "beta.txt"))
+        (let ((p (expand-file-name name dir)))
+          (write-region "x" nil p)
+          (org-upwell-claim
+           (org-upwell-save (list :path p :name name :provenance "pin"))
+           "T1" 'confirmed)))
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "alpha.txt" nil t))
+        (beginning-of-line)
+        (org-upwell-bench-toggle-mark)
+        ;; marked alpha, moved to beta, and says beta
+        (should (string-match-p "beta\\.txt" (org-upwell-bench-eldoc-function)))))))
+
 (ert-deftest org-upwell-test-the-echo-area-says-the-whole-of-it ()
   "The two things a column had to shorten, where a glance already goes."
   (org-upwell-test--with-dir

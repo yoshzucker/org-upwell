@@ -1211,6 +1211,18 @@ the row was being read with."
   (when org-upwell-follow-mode
     (org-upwell-follow-mode -1)))
 
+;; Eldoc speaks only after a command it has been told about: it keeps an
+;; obarray of them and says nothing after anything else, which is why the
+;; line at point is announced when `n' moves to it and was silent when `m'
+;; did.  `m' marks and moves down, and the line it lands on is exactly the
+;; one somebody is about to act on.
+;;
+;; Registered by prefix rather than one at a time, so a command added to the
+;; bench later is announced without anybody remembering to come back here.
+;; Every one of them either moves point or changes what the line at point
+;; says, which is the whole of what eldoc is being asked to report.
+(eldoc-add-command-completions "org-upwell-bench")
+
 (provide 'org-upwell-expand)
 
 ;;; org-upwell-expand.el ends here
