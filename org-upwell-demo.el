@@ -26,7 +26,7 @@
 (require 'org)
 (require 'org-id)
 (require 'org-upwell-core)
-(require 'org-upwell-expand)
+(require 'org-upwell-bench)
 
 (defgroup org-upwell-demo nil
   "Generated data for developing org-upwell."
@@ -164,7 +164,7 @@ Also the way back to a known state after dropping, pinning or claiming."
     (unless (re-search-forward (regexp-quote org-upwell-demo-id-drop) nil t)
       (user-error "org-upwell-demo: drop heading missing"))
     (org-back-to-heading t)
-    (org-upwell-bench (org-upwell-domain (point-marker)))))
+    (org-upwell--bench-draw (org-upwell-domain (point-marker)))))
 
 ;;;###autoload
 (define-minor-mode org-upwell-demo-mode
@@ -182,8 +182,8 @@ back.  Real `upwell.org' is never touched."
         (setq org-upwell-demo--saved
               (list :agenda-files (bound-and-true-p org-agenda-files)
                     :directory org-upwell-directory
-                    :expand-max org-upwell-expand-max
-                    :open-location org-upwell-expand-open-location
+                    :expand-max org-upwell-bench-open-max
+                    :open-location org-upwell-bench-open-location
                     :todo-keywords org-todo-keywords))
         (setq org-todo-keywords
               '((sequence "NEXT" "ONGO" "|" "DONE" "CANCEL")
@@ -193,8 +193,8 @@ back.  Real `upwell.org' is never touched."
               org-upwell-directory org-upwell-demo-directory
               ;; Bench only: opening the dummy csv in Numbers is not
               ;; the thing being demonstrated, and it hides the drop.
-              org-upwell-expand-max 0
-              org-upwell-expand-open-location nil)
+              org-upwell-bench-open-max 0
+              org-upwell-bench-open-location nil)
         (org-upwell-demo--goto-drop)
         (message "Upwell demo on.  Drop onto the bench.  o opens %s (same format as real use)."
                  (org-upwell-file)))
@@ -203,8 +203,8 @@ back.  Real `upwell.org' is never touched."
     (when org-upwell-demo--saved
       (setq org-agenda-files (plist-get org-upwell-demo--saved :agenda-files)
             org-upwell-directory (plist-get org-upwell-demo--saved :directory)
-            org-upwell-expand-max (plist-get org-upwell-demo--saved :expand-max)
-            org-upwell-expand-open-location
+            org-upwell-bench-open-max (plist-get org-upwell-demo--saved :expand-max)
+            org-upwell-bench-open-location
             (plist-get org-upwell-demo--saved :open-location)
             org-todo-keywords (plist-get org-upwell-demo--saved :todo-keywords)
             org-upwell-demo--saved nil))

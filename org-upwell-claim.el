@@ -33,8 +33,9 @@
 
 ;; The bench lives in org-upwell-expand, which requires this file's store
 ;; through the core.  Clock-out shows the listing when it is loaded.
-(declare-function org-upwell-bench "org-upwell-expand" (&optional domain))
-(declare-function org-upwell-domain "org-upwell-expand" (marker))
+(declare-function org-upwell-bench "org-upwell-bench" (&optional marker choose))
+(declare-function org-upwell--bench-draw "org-upwell-bench" (domain))
+(declare-function org-upwell-domain "org-upwell-bench" (marker))
 
 (defcustom org-upwell-review-on-clock-out 'bench
   "What clock-out does with the claims the spell just produced.
@@ -270,7 +271,7 @@ The window is not selected: clock-out is often followed by typing that
 was already begun, and a listing that takes the keyboard eats it."
   (when (fboundp 'org-upwell-bench)
     (save-selected-window
-      (org-upwell-bench (org-upwell-domain marker)))
+      (org-upwell--bench-draw (org-upwell-domain marker)))
     (message "org-upwell: %d file(s) attributed -- c keeps, d drops"
              (length items))))
 
@@ -336,15 +337,15 @@ alone.  Return how many were copied."
           (org-upwell-claim m to-id 'provisional)
           (setq n (1+ n)))))))
 
-(defun org-upwell--inherit-from-last-expanded (marker)
-  "Copy items from `org-upwell-last-expanded-id' onto MARKER, if different."
+(defun org-upwell--inherit-from-last-bench (marker)
+  "Copy items from `org-upwell-last-bench-id' onto MARKER, if different."
   (when (and org-upwell-inherit-on-clock-in
-             org-upwell-last-expanded-id
+             org-upwell-last-bench-id
              (markerp marker)
              (marker-buffer marker))
     (let ((to (org-upwell-heading-id marker)))
-      (unless (equal to org-upwell-last-expanded-id)
-        (org-upwell-inherit-to-heading org-upwell-last-expanded-id to)))))
+      (unless (equal to org-upwell-last-bench-id)
+        (org-upwell-inherit-to-heading org-upwell-last-bench-id to)))))
 
 (defun org-upwell--on-clock-in ()
   "Remember where this spell started, so clock-out can intersect it."
@@ -352,7 +353,7 @@ alone.  Return how many were copied."
         org-upwell--clock-in-marker
         (and (markerp org-clock-hd-marker)
              (copy-marker org-clock-hd-marker)))
-  (org-upwell--inherit-from-last-expanded org-upwell--clock-in-marker))
+  (org-upwell--inherit-from-last-bench org-upwell--clock-in-marker))
 
 (defun org-upwell--on-clock-out ()
   "Intersect traces with the spell that just ended, then offer review."

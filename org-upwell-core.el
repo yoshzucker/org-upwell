@@ -77,7 +77,7 @@ Nil uses `org-open-file'.  Dotfiles that already have an open policy
 (defconst org-upwell-prop-opened "UPWELL_OPENED")
 (defconst org-upwell-prop-stale "UPWELL_STALE")
 
-(defvar org-upwell-last-expanded-id nil
+(defvar org-upwell-last-bench-id nil
   "Org-id of the heading last expanded.
 
 Used when a new heading is clocked in: items already claimed to this

@@ -1,4 +1,4 @@
-;;; org-upwell-expand.el --- Invoke a heading's domain  -*- lexical-binding: t; -*-
+;;; org-upwell-bench.el --- The bench: a heading's materials, and what to do with them  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 yoshzucker
 
@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; Expand is not "open the directory" and not "restore Emacs windows".  It is
+;; The bench is not "open the directory" and not "restore Emacs windows".  It is
 ;; the heading's world: the Org entry itself, its LOCATION, its next
 ;; actions, and the files that claim it.  Most of what it opens lives
 ;; outside Emacs -- Excel, PowerPoint, a browser -- because that is where
@@ -31,7 +31,19 @@
 (declare-function w32-shell-execute "w32fns.c"
                   (operation document &optional parameters show-flag))
 
-(defcustom org-upwell-expand-max 8
+;; Renamed in 0.2, and declared before their referents because that is where
+;; `define-obsolete-variable-alias' has to sit.  The reason is at the foot of
+;; the file, with the function aliases.
+(define-obsolete-variable-alias 'org-upwell-expand-max
+  'org-upwell-bench-open-max "0.2")
+(define-obsolete-variable-alias 'org-upwell-expand-open-location
+  'org-upwell-bench-open-location "0.2")
+(define-obsolete-variable-alias 'org-upwell-expand-clock-in
+  'org-upwell-bench-clock-in "0.2")
+(define-obsolete-variable-alias 'org-upwell-last-expanded-id
+  'org-upwell-last-bench-id "0.2")
+
+(defcustom org-upwell-bench-open-max 8
   "How many the bench opens at once before it stops to ask.
 
 A domain with thirty files is a domain that cannot be laid on a desk,
@@ -42,16 +54,16 @@ answer."
   :type 'integer
   :group 'org-upwell)
 
-(defcustom org-upwell-expand-clock-in nil
-  "When non-nil, expand clocks in if nothing else is running.
+(defcustom org-upwell-bench-clock-in nil
+  "When non-nil, asking for the bench clocks in if nothing else is running.
 
-Off by default: expanding to look is not the same as starting the work,
+Off by default: looking at a heading is not the same as starting the work,
 and a clock nobody asked for is worse than no clock, because it has to
 be found and corrected before the day's record can be read."
   :type 'boolean
   :group 'org-upwell)
 
-(defcustom org-upwell-expand-open-location t
+(defcustom org-upwell-bench-open-location t
   "When non-nil, opening everything opens LOCATION too, if it is a URL.
 
 A meeting\='s LOCATION is where the meeting is, and for a call that is a
@@ -326,7 +338,7 @@ not land in the listing the user is picking from."
             :next (nreverse nexts)
             :items (and id (org-upwell-claimed-to id)))))))
 
-;;;; Expand
+;;;; Asking for a heading
 
 (defun org-upwell--heading-label (marker)
   "Return a completing-read label for the heading at MARKER."
@@ -335,8 +347,8 @@ not land in the listing the user is picking from."
             (org-get-heading t t t t)
             (file-name-nondirectory (or (buffer-file-name) "")))))
 
-(defun org-upwell--expand-candidates ()
-  "Return (LABEL . MARKER) for headings C-c v may expand from anywhere.
+(defun org-upwell--bench-candidates ()
+  "Return (LABEL . MARKER) for headings C-c v may reach from anywhere.
 
 Running clock first, then today's clocked work, then open NEXT/ONGO,
 then headings that already have files.  Titles are disambiguated by
@@ -370,14 +382,14 @@ file name so two \"File the photos\" do not collapse."
     (nreverse out)))
 
 (defun org-upwell--read-heading-marker ()
-  "Completing-read a heading to expand.  Return its marker, or nil."
-  (let ((cands (org-upwell--expand-candidates)))
+  "Completing-read a heading to lay out.  Return its marker, or nil."
+  (let ((cands (org-upwell--bench-candidates)))
     (unless cands
-      (user-error "No heading to expand (clock something, or open a NEXT)"))
-    (cdr (assoc (completing-read "Expand: " (mapcar #'car cands) nil t)
+      (user-error "No heading to show (clock something, or open a NEXT)"))
+    (cdr (assoc (completing-read "Bench: " (mapcar #'car cands) nil t)
                 cands))))
 
-(defun org-upwell-expand (&optional marker choose)
+(defun org-upwell-bench (&optional marker choose)
   "Lay the domain of a heading out on the bench.
 
 It opens nothing.  Which files a heading has is a question, and the
@@ -407,16 +419,16 @@ from an Org buffer, point lands on the heading."
          (domain (org-upwell-domain marker))
          (items (plist-get domain :items))
          (here (selected-window)))
-    (when (and org-upwell-expand-clock-in
+    (when (and org-upwell-bench-clock-in
                (not (org-clocking-p)))
       (org-with-point-at marker (org-clock-in)))
     (org-with-point-at marker
       (org-fold-show-entry)
       (org-fold-show-children))
-    (setq org-upwell-last-expanded-id (plist-get domain :id))
+    (setq org-upwell-last-bench-id (plist-get domain :id))
     ;; Drawn rather than merely refreshed: this is the command for asking
     ;; to see the list, so it answers even after `q' dismissed it.
-    (org-upwell-bench domain)
+    (org-upwell--bench-draw domain)
     ;; The window C-c v was pressed in keeps its buffer when that buffer
     ;; is the bench or an agenda.  Both are ways of reading the heading,
     ;; not somewhere to put its file: replacing the bench with the Org
@@ -435,19 +447,19 @@ from an Org buffer, point lands on the heading."
              (length items)
              (if (= (length items) 1) "" "s"))))
 
-(defun org-upwell-expand-clock ()
-  "Expand the heading currently being clocked."
+(defun org-upwell-bench-clock ()
+  "The bench of the heading currently being clocked."
   (interactive)
   (unless (and (markerp org-clock-hd-marker)
                (marker-buffer org-clock-hd-marker))
     (user-error "Nothing is being clocked"))
-  (org-upwell-expand org-clock-hd-marker))
+  (org-upwell-bench org-clock-hd-marker))
 
-(defun org-upwell-expand-id (id)
-  "Expand the heading whose org-id is ID."
+(defun org-upwell-bench-id (id)
+  "The bench of the heading whose org-id is ID."
   (let ((m (org-id-find id 'marker)))
     (unless m (user-error "org-upwell: no heading with id %s" id))
-    (org-upwell-expand m)))
+    (org-upwell-bench m)))
 
 (defun org-upwell-open-named (name)
   "Open an item by NAME, completing over the store."
@@ -574,15 +586,16 @@ reorganizes the frame, the bench is allowed to disappear."
             (set-frame-size nil pxw pxh t)))
         win))))
 
-(defun org-upwell-bench (&optional domain)
-  "Show DOMAIN (or the heading at point) in a strip of this frame."
-  (interactive)
-  (setq org-upwell--bench-intent 'wanted)
-  (let* ((domain (or domain
-                     (and (org-upwell--current-heading-marker)
-                          (org-upwell-domain
-                           (org-upwell--current-heading-marker)))))
-         (buf (get-buffer-create "*org-upwell*")))
+(defun org-upwell--bench-draw (domain)
+  "Draw DOMAIN on the bench, in a strip of this frame.
+
+The drawing half, and only that: it does not choose a heading, unfold
+anything, or move point.  Everything that redraws comes through here --
+a mark toggled, a claim kept, the clock moving on, `\\[org-upwell-bench-redraw]\='
+-- and none of those is somebody asking to be taken somewhere.  Asking
+is `org-upwell-bench\=', which does the choosing and then calls this."
+  (let ((buf (get-buffer-create "*org-upwell*")))
+    (setq org-upwell--bench-intent 'wanted)
     (unless domain
       (user-error "No heading to show"))
     (with-current-buffer buf
@@ -623,20 +636,16 @@ reorganizes the frame, the bench is allowed to disappear."
                              (frame-width)))))
           (goto-char (point-min))
           (setq buffer-read-only t))))
-    (let ((win (org-upwell--show-bench-buffer buf)))
-      (when (and (called-interactively-p 'interactive)
-                 (window-live-p win))
-        (select-window win))
-      win)))
+    (org-upwell--show-bench-buffer buf)))
 
 (defun org-upwell--maybe-refresh-bench (marker)
   "Redraw the bench for MARKER when it is showing or still wanted.
 
-Expanding switches the list.  If agenda stole the window, C-c v
-puts it back.  After `q', the bench stays gone."
+Asking for another heading switches the list.  If agenda stole the
+window, C-c v puts it back.  After `q', the bench stays gone."
   (when (or (get-buffer-window "*org-upwell*" nil)
             (eq org-upwell--bench-intent 'wanted))
-    (org-upwell-bench (org-upwell-domain marker))))
+    (org-upwell--bench-draw (org-upwell-domain marker))))
 
 (defun org-upwell--pad (s width)
   "Return S with spaces after it, to WIDTH columns."
@@ -813,13 +822,13 @@ The bench window is left as the bench."
 
 The one command in the package that opens in bulk, and it is on the
 bench because that is where the list can be seen first.  Above
-`org-upwell-expand-max\=' it says how many and waits: the number is the
+`org-upwell-bench-open-max\=' it says how many and waits: the number is the
 whole warning, since what is about to happen is that many applications
 starting at once."
   (interactive)
   (let* ((domain org-upwell-bench-domain)
          (items (and domain (plist-get domain :items)))
-         (location (and org-upwell-expand-open-location
+         (location (and org-upwell-bench-open-location
                         (org-upwell--looks-like-url
                          (plist-get domain :location))
                         (plist-get domain :location)))
@@ -827,7 +836,7 @@ starting at once."
          (n 0))
     (unless items
       (user-error "No files on this heading"))
-    (when (and (> total org-upwell-expand-max)
+    (when (and (> total org-upwell-bench-open-max)
                (not (y-or-n-p (format "Open %d things at once? " total))))
       (user-error "Nothing opened"))
     (when location
@@ -866,7 +875,7 @@ starting at once."
           (if (member id org-upwell-bench-marked)
               (delete id org-upwell-bench-marked)
             (cons id org-upwell-bench-marked)))
-    (org-upwell-bench org-upwell-bench-domain)
+    (org-upwell--bench-draw org-upwell-bench-domain)
     (goto-char (point-min))
     (forward-line line)))
 
@@ -879,7 +888,7 @@ starting at once."
     (when id
       (setq org-upwell-bench-marked
             (delete id org-upwell-bench-marked))
-      (org-upwell-bench org-upwell-bench-domain)
+      (org-upwell--bench-draw org-upwell-bench-domain)
       (goto-char (point-min))
       (forward-line line))))
 
@@ -894,7 +903,7 @@ starting at once."
                    (null (seq-difference ids org-upwell-bench-marked)))
               nil
             ids))
-    (org-upwell-bench org-upwell-bench-domain)))
+    (org-upwell--bench-draw org-upwell-bench-domain)))
 
 (defun org-upwell-bench-unmark-all ()
   "Unmark every item on the bench.
@@ -902,7 +911,7 @@ starting at once."
 No prompt: the bench is a handful of files, not a dired of thousands."
   (interactive)
   (setq org-upwell-bench-marked nil)
-  (org-upwell-bench org-upwell-bench-domain))
+  (org-upwell--bench-draw org-upwell-bench-domain))
 
 (defun org-upwell--bench-target-items ()
   "Return the marked items, or the item on this line.
@@ -933,7 +942,7 @@ Marks go: what they pointed at may not be there any more."
   (let ((line (line-number-at-pos))
         (marker (plist-get org-upwell-bench-domain :marker)))
     (setq org-upwell-bench-marked nil)
-    (org-upwell-bench (org-upwell-domain marker))
+    (org-upwell--bench-draw (org-upwell-domain marker))
     (goto-char (point-min))
     (forward-line (1- line))))
 
@@ -1244,7 +1253,7 @@ is drawn again."
            (stolen (and (eq org-upwell--bench-intent 'wanted) (not showing))))
       (when (and id (or stolen (not (equal id org-upwell--follow-seen))))
         (setq org-upwell--follow-seen id)
-        (ignore-errors (org-upwell-bench (org-upwell-domain marker)))))))
+        (ignore-errors (org-upwell--bench-draw (org-upwell-domain marker)))))))
 
 (defun org-upwell--quit-bench-window ()
   "Delete the bench window on this frame, if it is not the only window."
@@ -1255,7 +1264,7 @@ is drawn again."
       (delete-window win))))
 
 (defun org-upwell-bench-quit ()
-  "Dismiss the bench.  Follow and expand do not put it back until
+  "Dismiss the bench.  Follow does not put it back until
 the heading changes, or the bench is asked for again."
   (interactive)
   (setq org-upwell--bench-intent 'dismissed)
@@ -1283,7 +1292,7 @@ designed in the agenda and worked from the bench is what it is for."
   "After agenda context action, show the bench for that heading.
 
 Runs when `org-upwell-agenda-follow' or Org's own follow mode is on.
-Does not open files; that is expand."
+Does not open files; opening is done from the bench."
   (when (and (or org-upwell-agenda-follow
                  (bound-and-true-p org-agenda-follow-mode))
              (derived-mode-p 'org-agenda-mode))
@@ -1297,7 +1306,7 @@ Does not open files; that is expand."
 
 Turning the mode on draws the bench.  Turning it off deletes the
 bench window.  Motion inside a heading does not redraw.  Does not
-open files; that is expand.
+open files; opening is done from the bench.
 
 Agenda follow (`F') is separate: with `org-upwell-mode' on, `F'
 already updates the bench from the agenda row."
@@ -1380,6 +1389,20 @@ the row was being read with."
 ;; says, which is the whole of what eldoc is being asked to report.
 (eldoc-add-command-completions "org-upwell-bench")
 
+;; Renamed in 0.2.  The bench is the noun this package has: one buffer, one
+;; listing, one act of asking for it.  `expand' was the verb from when asking
+;; meant opening the files, and it outlived that -- a key whose name does not
+;; say what it does is the same complaint as a file whose row does not say
+;; where it lives.
+(define-obsolete-function-alias 'org-upwell-expand
+  'org-upwell-bench "0.2")
+(define-obsolete-function-alias 'org-upwell-expand-clock
+  'org-upwell-bench-clock "0.2")
+(define-obsolete-function-alias 'org-upwell-expand-id
+  'org-upwell-bench-id "0.2")
+
+(provide 'org-upwell-bench)
+;; A configuration that required the file by its old name keeps working.
 (provide 'org-upwell-expand)
 
-;;; org-upwell-expand.el ends here
+;;; org-upwell-bench.el ends here

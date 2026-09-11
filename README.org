@@ -3,9 +3,9 @@
 
 Files rising to the heading that is being lived.
 
-A user heading -- a project, a task, a meeting -- has a *domain*. Expanding
-the domain lays it out: the Org entry, and the files and URLs that claim it,
-each with where it lives. Reading comes before opening, and they are two
+A user heading -- a project, a task, a meeting -- has a *domain*. The bench
+lays it out: the Org entry, and the files and URLs that claim it, each with
+where it lives. Reading comes before opening, and they are two
 acts -- where a thing is and what kind of thing it is are what make it worth
 opening at all. Those files are not listed under the heading; they point up
 at its id. ~upwell.org~ is storage for those identities, not the work.
@@ -90,15 +90,21 @@ For a one-off test session only, and not how it should run day to day:
 
 * Commands
 
+~expand~ was this package's verb until 0.2, from when asking for a heading
+meant opening its files. It is ~bench~ now -- one noun for the buffer, the
+listing and the act of asking for it. The old names are obsolete aliases,
+including ~expand=~ in the org-protocol URL.
+
+
 | Command | What it does |
 |---|---|
-| ~org-upwell-expand~ | Lay the heading at point / the agenda row / the running clock out on the bench. It opens nothing -- opening is done from the bench, where the list can be seen first. Neither the bench nor an agenda loses its window. With a prefix argument, always choose the heading from a list |
-| ~org-upwell-expand-clock~ | The bench of whatever is being clocked (emacsclient-friendly) |
+| ~org-upwell-bench~ | Lay the heading at point / the agenda row / the running clock out on the bench. It opens nothing -- opening is done from the bench, where the list can be seen first. Neither the bench nor an agenda loses its window. With a prefix argument, always choose the heading from a list |
+| ~org-upwell-bench-clock~ | The bench of whatever is being clocked (emacsclient-friendly) |
 | ~org-upwell-pin~ | Catch a file or URL. Clock or heading at point → confirmed claim; else unclaimed |
 | ~org-upwell-create~ | New xlsx/pptx/…, claimed, no save-location prompt |
 | ~org-upwell-open-named~ | Completing-read over the store |
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
-| ~org-upwell-bench~ | Listing of the domain, drop target. A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits |
+| (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
 | ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
 
@@ -173,16 +179,16 @@ window as well; this one draws the listing and nothing else, so the frame
 stays as it was. Either way, ~TAB~ in the agenda puts the file in the
 window above the bench rather than in the strip.
 
-From a launcher, a hotkey, or anything else that can run a command, to
-expand whatever is being clocked:
+From a launcher, a hotkey, or anything else that can run a command, to put
+whatever is being clocked on the bench:
 
-: emacsclient -e "(org-upwell-expand-clock)"
+: emacsclient -e "(org-upwell-bench-clock)"
 
 org-protocol, for a browser (bookmarklet in
 ~script/org-upwell-bookmarklet.txt~):
 
 : org-protocol://upwell?url=…&title=…
-: org-protocol://upwell?expand=ORG-ID
+: org-protocol://upwell?bench=ORG-ID
 
 * How attribution works
 

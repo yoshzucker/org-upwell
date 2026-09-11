@@ -25,8 +25,8 @@
 (require 'dnd)
 (require 'seq)
 
-(declare-function org-upwell--maybe-refresh-bench "org-upwell-expand")
-(declare-function org-upwell-expand-id "org-upwell-expand" (id))
+(declare-function org-upwell--maybe-refresh-bench "org-upwell-bench")
+(declare-function org-upwell-bench-id "org-upwell-bench" (id))
 (defvar org-upwell-bench-domain)
 
 (defun org-upwell--current-heading-marker ()
@@ -148,17 +148,21 @@ Idempotent: the bench redraws on every heading it follows, and an
 
   org-protocol://upwell?url=URL&title=TITLE
   org-protocol://upwell?path=PATH
-  org-protocol://upwell?expand=ID
+  org-protocol://upwell?bench=ID
 
-The first two pin.  The third expands a heading by org-id."
+The first two pin.  The third lays a heading out, by org-id.
+
+`expand=\=' is taken as `bench=\=' too.  It was the name before the command
+was, and a URL already sitting in somebody\='s bookmarks or shell history is
+not something a rename gets to break."
   (let ((url (plist-get info :url))
         (path (plist-get info :path))
         (title (plist-get info :title))
-        (expand (plist-get info :expand)))
+        (bench (or (plist-get info :bench) (plist-get info :expand))))
     (cond
-     (expand
-      (require 'org-upwell-expand)
-      (org-upwell-expand-id expand)
+     (bench
+      (require 'org-upwell-bench)
+      (org-upwell-bench-id bench)
       nil)
      (path
       (org-upwell-pin path nil "protocol")
@@ -167,7 +171,7 @@ The first two pin.  The third expands a heading by org-id."
       (org-upwell-pin-url url title)
       nil)
      (t
-      (message "org-upwell: protocol URL had no url=, path= or expand=")
+      (message "org-upwell: protocol URL had no url=, path= or bench=")
       nil))))
 
 (defun org-upwell-protocol-setup ()

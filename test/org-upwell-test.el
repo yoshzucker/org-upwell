@@ -23,7 +23,7 @@
 (require 'org-upwell-trace)
 (require 'org-upwell-claim)
 (require 'org-upwell-pin)
-(require 'org-upwell-expand)
+(require 'org-upwell-bench)
 (require 'org-upwell-demo)
 
 (defmacro org-upwell-test--with-dir (&rest body)
@@ -394,7 +394,7 @@ keeps its width *and* its height; the other one pays for the strip."
           ;; Force the strip underneath, so a root split would show up
           ;; as the caller losing height rather than losing width.
           (split-width-threshold (1+ (max lw rw))))
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (should (get-buffer-window "*org-upwell*" nil))
      (should (= rw (window-total-width right)))
      (should (= rh (window-total-height right)))
@@ -411,7 +411,7 @@ keeps its width *and* its height; the other one pays for the strip."
           (left (car panes))
           (right (cdr panes))
           (split-width-threshold (1+ (window-total-width left))))
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (let ((bench (get-buffer-window "*org-upwell*" nil)))
        (should (window-live-p bench))
        (should (eq left (window-in-direction 'above bench)))
@@ -429,10 +429,10 @@ keeps its width *and* its height; the other one pays for the strip."
                     (org-with-point-at (org-upwell-test--heading-marker file 2)
                       (org-id-get)))))))
 
-(ert-deftest org-upwell-test-expand-opens-nothing ()
+(ert-deftest org-upwell-test-bench-opens-nothing ()
   "Which files a heading has is a question, and the answer is a list.
 
-Expand used to open up to `org-upwell-expand-max\=' of them before anybody
+Expand used to open up to `org-upwell-bench-open-max\=' of them before anybody
 had seen what they were -- with an opener that hands a path to the OS,
 that is eight applications taking the screen.  Opening is a second act,
 from the bench."
@@ -448,7 +448,7 @@ from the bench."
           "T1" 'confirmed)))
      (cl-letf (((symbol-function 'org-upwell-open)
                 (lambda (&rest _) (setq opened (1+ opened)))))
-       (org-upwell-expand (org-upwell-test--heading-marker file)))
+       (org-upwell-bench (org-upwell-test--heading-marker file)))
      (should (= 0 opened))
      ;; and what it did instead is show them
      (should (get-buffer "*org-upwell*"))
@@ -457,7 +457,7 @@ from the bench."
          (goto-char (point-min))
          (should (search-forward name nil t)))))))
 
-(ert-deftest org-upwell-test-expand-answers-after-q ()
+(ert-deftest org-upwell-test-bench-answers-after-q ()
   "`q\=' dismissed the listing; asking for it again is asking for it again.
 
 It declined once, from the days when expand opened the files and the
@@ -467,11 +467,11 @@ declining would make C-c v do nothing at all."
    (let ((file (org-upwell-test--write-journal
                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
      (let ((org-upwell--bench-intent 'dismissed))
-       (org-upwell-expand (org-upwell-test--heading-marker file))
+       (org-upwell-bench (org-upwell-test--heading-marker file))
        (should (get-buffer "*org-upwell*"))
        (should (eq org-upwell--bench-intent 'wanted))))))
 
-(ert-deftest org-upwell-test-expand-switches-a-showing-bench ()
+(ert-deftest org-upwell-test-bench-switches-a-showing-one ()
   "C-c v on another heading must redraw the bench if it is already up.
 
 The demo opens File the photos.  Expanding Compare the three quotes
@@ -484,13 +484,13 @@ checks expand does not *create* a bench cannot see this."
           (quotes (org-upwell-test--marker-at-id file "Q")))
      (org-upwell-save (list :name "quote.csv" :url "https://x/q.csv"))
      (org-upwell-claim (org-upwell-find :name "quote.csv") "Q" 'confirmed)
-     (org-upwell-bench (org-upwell-domain drop))
+     (org-upwell--bench-draw (org-upwell-domain drop))
      (with-current-buffer "*org-upwell*"
        (should (equal "DROP" (plist-get org-upwell-bench-domain :id)))
        (should-not (plist-get org-upwell-bench-domain :items)))
      (cl-letf (((symbol-function 'org-upwell-open) #'ignore)
                ((symbol-function 'org-upwell--open-url) #'ignore))
-       (org-upwell-expand quotes))
+       (org-upwell-bench quotes))
      (with-current-buffer "*org-upwell*"
        (should (equal "Q" (plist-get org-upwell-bench-domain :id)))
        (should (equal '("quote.csv")
@@ -522,7 +522,7 @@ checks expand does not *create* a bench cannot see this."
      (org-upwell-claim (org-upwell-find :name "a.xlsx") "T1" 'confirmed)
      (org-upwell-save (list :name "b.xlsx" :path "/tmp/b.xlsx"))
      (org-upwell-claim (org-upwell-find :name "b.xlsx") "T1" 'confirmed)
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (with-current-buffer "*org-upwell*"
        (setq org-upwell-bench-marked
              (mapcar (lambda (m) (plist-get m :id))
@@ -591,7 +591,7 @@ not whatever Org buffer happens to be selected."
                  "* NEXT Photos\n:PROPERTIES:\n:ID: DROP\n:END:\n* NEXT Quotes\n:PROPERTIES:\n:ID: Q\n:END:\n"))
           (p (expand-file-name "shot.jpg" dir)))
      (write-region "x" nil p)
-     (org-upwell-bench (org-upwell-domain
+     (org-upwell--bench-draw (org-upwell-domain
                         (org-upwell-test--marker-at-id file "DROP")))
      (with-current-buffer "*org-upwell*"
        (let ((m (org-upwell-pin p nil "drop")))
@@ -604,7 +604,7 @@ not whatever Org buffer happens to be selected."
    (let ((file (org-upwell-test--write-journal
                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
          (called nil))
-     (cl-letf (((symbol-function 'org-upwell-bench)
+     (cl-letf (((symbol-function 'org-upwell--bench-draw)
                 (lambda (&rest _) (setq called t))))
        (org-upwell--maybe-refresh-bench
         (org-upwell-test--heading-marker file)))
@@ -617,7 +617,7 @@ not whatever Org buffer happens to be selected."
                 "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\nbody\n* NEXT Two\n:PROPERTIES:\n:ID: B\n:END:\n"))
          (n 0))
      (setq org-upwell--follow-seen "A")
-     (cl-letf (((symbol-function 'org-upwell-bench)
+     (cl-letf (((symbol-function 'org-upwell--bench-draw)
                 (lambda (&rest _) (setq n (1+ n)))))
        (org-upwell--follow-draw (org-upwell-test--marker-at-id file "A"))
        (should (= n 0))
@@ -629,8 +629,8 @@ not whatever Org buffer happens to be selected."
   (org-upwell-test--with-dir
    (let ((file (org-upwell-test--write-journal
                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
-     (org-upwell-bench (org-upwell-domain
-                        (org-upwell-test--heading-marker file)))
+     (org-upwell--bench-draw
+      (org-upwell-domain (org-upwell-test--heading-marker file)))
      (should (get-buffer-window "*org-upwell*" nil))
      (org-upwell-bench-quit)
      (should-not (get-buffer-window "*org-upwell*" nil)))))
@@ -706,24 +706,24 @@ bench as a heading change, so each q split the root once more."
                                                :items))
                             #'string<)))))))
 
-(ert-deftest org-upwell-test-demo-expand-switches-bench-from-drop-to-quotes ()
+(ert-deftest org-upwell-test-demo-bench-switches-from-drop-to-quotes ()
   "The path the demo teaches: bench opens on File the photos, C-c v on
 Compare the three quotes must put the quotes on the bench."
   (org-upwell-test--with-dir
    (let ((org-upwell-demo-directory (expand-file-name "demo" dir)))
      (org-upwell-demo-regenerate)
      (let* ((org-upwell-directory org-upwell-demo-directory)
-            (org-upwell-expand-max 0)
-            (org-upwell-expand-open-location nil)
+            (org-upwell-bench-open-max 0)
+            (org-upwell-bench-open-location nil)
             (file (expand-file-name "projects.org" org-upwell-demo-directory))
             (drop (org-upwell-test--marker-at-id file org-upwell-demo-id-drop))
             (quotes (org-upwell-test--marker-at-id
                      file org-upwell-demo-id-quotes)))
-       (org-upwell-bench (org-upwell-domain drop))
+       (org-upwell--bench-draw (org-upwell-domain drop))
        (with-current-buffer "*org-upwell*"
          (should (equal org-upwell-demo-id-drop
                         (plist-get org-upwell-bench-domain :id))))
-       (org-upwell-expand quotes)
+       (org-upwell-bench quotes)
        (with-current-buffer "*org-upwell*"
          (should (equal org-upwell-demo-id-quotes
                         (plist-get org-upwell-bench-domain :id)))
@@ -893,29 +893,29 @@ to a heading nobody has touched since."
 
 ;;;; Expand and the windows it was called from
 
-(ert-deftest org-upwell-test-expand-does-not-take-the-bench-window ()
+(ert-deftest org-upwell-test-bench-does-not-take-its-own-window ()
   "C-c v on the bench must not replace the listing it just redrew."
   (org-upwell-test--with-dir
-   (let* ((org-upwell-expand-max 0)
-          (org-upwell-expand-open-location nil)
+   (let* ((org-upwell-bench-open-max 0)
+          (org-upwell-bench-open-location nil)
           (file (org-upwell-test--write-journal
                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
           (mk (org-upwell-test--heading-marker file)))
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (let ((bench (get-buffer-window "*org-upwell*" nil)))
        (should (window-live-p bench))
        (select-window bench)
-       (org-upwell-expand)
+       (org-upwell-bench)
        (should (window-live-p bench))
        (should (eq (window-buffer bench) (get-buffer "*org-upwell*")))))))
 
 ;;;; Opening
 
-(ert-deftest org-upwell-test-expand-does-not-take-the-agenda-window ()
+(ert-deftest org-upwell-test-bench-does-not-take-the-agenda-window ()
   "V in the agenda expands the row.  It does not close the agenda."
   (org-upwell-test--with-dir
-   (let* ((org-upwell-expand-max 0)
-          (org-upwell-expand-open-location nil)
+   (let* ((org-upwell-bench-open-max 0)
+          (org-upwell-bench-open-location nil)
           (file (org-upwell-test--write-journal
                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
           (mk (org-upwell-test--heading-marker file))
@@ -923,7 +923,7 @@ to a heading nobody has touched since."
      (with-current-buffer agenda (org-agenda-mode))
      (delete-other-windows)
      (set-window-buffer (selected-window) agenda)
-     (org-upwell-expand mk)
+     (org-upwell-bench mk)
      (should (eq (window-buffer (selected-window)) agenda))
      (kill-buffer agenda))))
 
@@ -1223,7 +1223,7 @@ nothing to answer with."
      (org-upwell-claim
       (org-upwell-save (list :path two :name "quote.csv" :provenance "drop"))
       "T1" 'confirmed)
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (with-current-buffer "*org-upwell*"
        (let ((text (buffer-string)))
          (should (= 2 (cl-count-if (lambda (l) (string-match-p "quote\\.csv" l))
@@ -1279,7 +1279,7 @@ a directory, every row that came out of one browser read the same three words."
          (org-upwell-save (list :url (cadr pair) :name (car pair)
                                 :provenance "trace"))
          "T1" 'confirmed))
-      (org-upwell-bench (org-upwell-domain mk))
+      (org-upwell--bench-draw (org-upwell-domain mk))
       (with-current-buffer "*org-upwell*"
         (let ((text (buffer-string)))
           (should (string-match-p "納品スケジュール" text))
@@ -1326,7 +1326,7 @@ somebody is about to act on."
           (org-upwell-claim
            (org-upwell-save (list :path p :name name :provenance "pin"))
            "T1" 'confirmed)))
-      (org-upwell-bench (org-upwell-domain mk))
+      (org-upwell--bench-draw (org-upwell-domain mk))
       (with-current-buffer "*org-upwell*"
         (goto-char (point-min))
         (should (search-forward "alpha.txt" nil t))
@@ -1346,7 +1346,7 @@ somebody is about to act on."
       (org-upwell-claim
        (org-upwell-save (list :url url :name name :provenance "trace"))
        "T1" 'confirmed)
-      (org-upwell-bench (org-upwell-domain mk))
+      (org-upwell--bench-draw (org-upwell-domain mk))
       (with-current-buffer "*org-upwell*"
         (goto-char (point-min))
         (should (search-forward "納品" nil t))
@@ -1420,11 +1420,11 @@ completing-read of every heading, which looks like a different command."
            (should (equal mk (org-upwell--current-heading-marker))))
        (kill-buffer agenda)))))
 
-(ert-deftest org-upwell-test-expand-with-a-prefix-asks-anyway ()
+(ert-deftest org-upwell-test-bench-with-a-prefix-asks-anyway ()
   "C-u C-c v is the way to the list when point is on a heading."
   (org-upwell-test--with-dir
-   (let* ((org-upwell-expand-max 0)
-          (org-upwell-expand-open-location nil)
+   (let* ((org-upwell-bench-open-max 0)
+          (org-upwell-bench-open-location nil)
           (file (org-upwell-test--write-journal
                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
           (mk (org-upwell-test--heading-marker file))
@@ -1434,10 +1434,10 @@ completing-read of every heading, which looks like a different command."
        (with-current-buffer (marker-buffer mk)
          (goto-char mk)
          (let ((current-prefix-arg '(4)))
-           (call-interactively #'org-upwell-expand))
+           (call-interactively #'org-upwell-bench))
          (should (= 1 asked))
          (let ((current-prefix-arg nil))
-           (call-interactively #'org-upwell-expand))
+           (call-interactively #'org-upwell-bench))
          (should (= 1 asked)))))))
 
 ;;;; Keeping and dropping from the bench
@@ -1454,7 +1454,7 @@ comes back on the next pass, so dropping has to be written down."
      (org-upwell-claim
       (org-upwell-save (list :path p :name "doc.xlsx" :provenance "trace"))
       "T1" 'provisional)
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (with-current-buffer "*org-upwell*"
        (goto-char (point-min))
        (should (search-forward "doc.xlsx" nil t))
@@ -1475,7 +1475,7 @@ comes back on the next pass, so dropping has to be written down."
      (org-upwell-claim
       (org-upwell-save (list :path p :name "doc.xlsx" :provenance "trace"))
       "T1" 'provisional)
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (with-current-buffer "*org-upwell*"
        (goto-char (point-min))
        (should (search-forward "doc.xlsx" nil t))
@@ -1502,7 +1502,7 @@ leaves nothing to propose it again anywhere."
      (org-upwell-claim
       (org-upwell-save (list :path other :name "keep.xlsx" :provenance "pin"))
       "T1" 'confirmed)
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (with-current-buffer "*org-upwell*"
        (goto-char (point-min))
        (should (search-forward "doc.xlsx" nil t))
@@ -1527,7 +1527,7 @@ leaves nothing to propose it again anywhere."
           (mk (org-upwell-test--heading-marker file)))
      (delete-other-windows)
      (set-window-buffer (selected-window) (marker-buffer mk))
-     (org-upwell-bench (org-upwell-domain mk))
+     (org-upwell--bench-draw (org-upwell-domain mk))
      (let* ((bench (get-buffer-window "*org-upwell*" nil))
             (above (window-in-direction 'above bench))
             (n (length (window-list nil 'nomini)))
@@ -1548,7 +1548,7 @@ must not put it in the strip either.  It is cut in between."
            (with-current-buffer agenda (org-agenda-mode))
            (delete-other-windows)
            (set-window-buffer (selected-window) agenda)
-           (org-upwell-bench (org-upwell-domain mk))
+           (org-upwell--bench-draw (org-upwell-domain mk))
            (let* ((bench (get-buffer-window "*org-upwell*" nil))
                   (win (org-upwell-display-above-bench (marker-buffer mk) nil)))
              (should (window-live-p win))
@@ -1584,7 +1584,7 @@ movement this setting exists to do without."
 
 (ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
   "The bench is the one place that opens in bulk, so it is the one place
-that has to say how many first.  `org-upwell-expand-max\=' is the number
+that has to say how many first.  `org-upwell-bench-open-max\=' is the number
 above which it asks; the number is the whole warning, because what is about
 to happen is that many applications starting at once."
   (org-upwell-test--with-dir
@@ -1599,20 +1599,20 @@ to happen is that many applications starting at once."
           (org-upwell-claim
            (org-upwell-save (list :path p :name name :provenance "pin"))
            "T1" 'confirmed)))
-      (org-upwell-bench (org-upwell-domain mk))
+      (org-upwell--bench-draw (org-upwell-domain mk))
       (with-current-buffer "*org-upwell*"
         (cl-letf (((symbol-function 'org-upwell-open)
                    (lambda (&rest _) (setq opened (1+ opened))))
                   ((symbol-function 'y-or-n-p)
                    (lambda (prompt) (setq asked prompt) nil)))
           ;; under the cap: no question, and it opens
-          (let ((org-upwell-expand-max 8))
+          (let ((org-upwell-bench-open-max 8))
             (org-upwell-bench-open-all))
           (should-not asked)
           (should (= 4 opened))
           ;; over it: it asks, and "no" opens nothing
           (setq opened 0)
-          (let ((org-upwell-expand-max 3))
+          (let ((org-upwell-bench-open-max 3))
             (should-error (org-upwell-bench-open-all) :type 'user-error))
           (should (string-match-p "4" (or asked "")))
           (should (= 0 opened)))))))
@@ -1635,7 +1635,7 @@ the list after `r\=' and was not before."
                   "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
            (mk (org-upwell-test--heading-marker file))
            (p (expand-file-name "late.txt" dir)))
-      (org-upwell-bench (org-upwell-domain mk))
+      (org-upwell--bench-draw (org-upwell-domain mk))
       (with-current-buffer "*org-upwell*"
         (goto-char (point-min))
         (should-not (search-forward "late.txt" nil t))
@@ -1697,6 +1697,39 @@ is which."
       (should split)
       (should (< (string-search "keep it here" text) split))
       (should (> (string-search "add a URL" text) split)))))
+
+(ert-deftest org-upwell-test-the-old-expand-names-still-answer ()
+  "The bench is the noun this package has, and `expand\=' was the verb from
+when asking for a heading meant opening its files.  Renamed, not removed: a
+configuration that bound the old name keeps working, and hears about it from
+the byte-compiler rather than from a void-function at the keyboard."
+  (dolist (pair '((org-upwell-expand . org-upwell-bench)
+                  (org-upwell-expand-clock . org-upwell-bench-clock)
+                  (org-upwell-expand-id . org-upwell-bench-id)))
+    (should (fboundp (car pair)))
+    (should (eq (indirect-function (car pair)) (indirect-function (cdr pair)))))
+  (dolist (pair '((org-upwell-expand-max . org-upwell-bench-open-max)
+                  (org-upwell-expand-open-location . org-upwell-bench-open-location)
+                  (org-upwell-expand-clock-in . org-upwell-bench-clock-in)
+                  (org-upwell-last-expanded-id . org-upwell-last-bench-id)))
+    (should (eq (indirect-variable (car pair)) (cdr pair))))
+  ;; and the file answers to the name a `require' may still use
+  (should (featurep 'org-upwell-expand)))
+
+(ert-deftest org-upwell-test-the-protocol-still-takes-expand ()
+  "A URL already in somebody\='s bookmarks is not something a rename breaks."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--write-journal
+                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+          (seen nil))
+      (org-id-add-location "T1" file)
+      (cl-letf (((symbol-function 'org-upwell-bench-id)
+                 (lambda (id) (setq seen id))))
+        (org-upwell-protocol (list :expand "T1"))
+        (should (equal seen "T1"))
+        (setq seen nil)
+        (org-upwell-protocol (list :bench "T1"))
+        (should (equal seen "T1"))))))
 
 (ert-deftest org-upwell-test-the-old-directory-names-still-answer ()
   "Renamed, not removed: a configuration that called them by the old name

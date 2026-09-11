@@ -40,7 +40,7 @@
 ;;   org-upwell-trace.el    the watcher's JSONL
 ;;   org-upwell-claim.el    clock intersection, live and retroactive
 ;;   org-upwell-pin.el      explicit catch (pin, drop, org-protocol)
-;;   org-upwell-expand.el   domain, expand, bench, resolve
+;;   org-upwell-bench.el    the listing, opening, resolve, follow
 ;;   org-upwell-watch.el    convenience starter for the watcher
 ;;   org-upwell-plan.el     foresight board signals
 ;;   org-upwell-demo.el     generated data, behind a toggle
@@ -54,7 +54,7 @@
 (require 'org-upwell-trace)
 (require 'org-upwell-claim)
 (require 'org-upwell-pin)
-(require 'org-upwell-expand)
+(require 'org-upwell-bench)
 (require 'org-upwell-watch)
 (require 'org-upwell-plan)
 (require 'org-upwell-demo)
