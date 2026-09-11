@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; Expand is not "open the folder" and not "restore Emacs windows".  It is
+;; Expand is not "open the directory" and not "restore Emacs windows".  It is
 ;; the heading's world: the Org entry itself, its LOCATION, its next
 ;; actions, and the files that claim it.  Most of what it opens lives
 ;; outside Emacs -- Excel, PowerPoint, a browser -- because that is where
@@ -32,10 +32,13 @@
                   (operation document &optional parameters show-flag))
 
 (defcustom org-upwell-expand-max 8
-  "Most items opened in one expand.
+  "How many the bench opens at once before it stops to ask.
 
-A domain with thirty files is a domain that cannot be laid on a desk.
-The rest stay listed on the bench, one click each."
+A domain with thirty files is a domain that cannot be laid on a desk,
+and thirty applications starting at once is not a desk being laid --
+it is a machine being taken away from you for a minute.  Above this
+many, \\[org-upwell-bench-open-all] says how many and waits for an
+answer."
   :type 'integer
   :group 'org-upwell)
 
@@ -49,7 +52,11 @@ be found and corrected before the day's record can be read."
   :group 'org-upwell)
 
 (defcustom org-upwell-expand-open-location t
-  "When non-nil, open LOCATION if it looks like a URL."
+  "When non-nil, opening everything opens LOCATION too, if it is a URL.
+
+A meeting\='s LOCATION is where the meeting is, and for a call that is a
+link.  It belongs with the files rather than apart from them, so it goes
+with \\[org-upwell-bench-open-all] and not on its own."
   :type 'boolean
   :group 'org-upwell)
 
@@ -69,7 +76,7 @@ a fraction."
 (defcustom org-upwell-search-roots '("~/Downloads/")
   "Directories to look in when a stored path has gone.
 
-A file that was renamed, or filed away into a `done' folder, is found
+A file that was renamed, or filed away into a `done' directory, is found
 again by its file-id or its basename under these.  Only directories that
 exist are searched, so one list may name the trees of several machines.
 
@@ -210,7 +217,7 @@ nothing opens in Emacs."
 
 Not `org-upwell-open-function': that setting decides which application a
 *file* belongs to, and this is a request for the desktop's own window onto
-the folder around it."
+the directory around it."
   (let ((dir (file-name-directory (directory-file-name path))))
     (cond
      ((eq system-type 'windows-nt)
@@ -225,13 +232,13 @@ the folder around it."
       (start-process "org-upwell-reveal" nil "xdg-open" dir))
      (t (user-error "No system reveal command for %S" system-type)))))
 
-(defun org-upwell-open-folder (&optional item)
-  "Open the folder ITEM lives in, with ITEM selected where the OS can.
+(defun org-upwell-open-directory (&optional item)
+  "Open the directory ITEM lives in, with ITEM selected where the OS can.
 
 The bench answers \"which of these two same-named files is it?\" with the
-folder; this is how to go and stand in that folder.  A URL has no folder
-and says so.  A path that moved is resolved first, so the folder opened is
-the one the file is in now."
+directory; this is how to go and stand in it.  A URL lives in no directory
+and says so.  A path that moved is resolved first, so the directory opened
+is the one the file is in now."
   (interactive)
   (let* ((m (or item
                 (org-upwell--bench-item-at-point)
@@ -241,6 +248,11 @@ the one the file is in now."
       (user-error "org-upwell: %s is not a file on this machine"
                   (or (plist-get m :name) "this item")))
     (org-upwell--reveal-external (plist-get app :value))))
+
+(define-obsolete-function-alias 'org-upwell-open-folder
+  'org-upwell-open-directory "0.2"
+  "Renamed: a directory is a directory everywhere but in Windows\=' own
+vocabulary, and this package speaks its own.")
 
 (defun org-upwell--bench-window-p (&optional window)
   "Return non-nil if WINDOW (default selected) shows the bench."
@@ -366,7 +378,16 @@ file name so two \"File the photos\" do not collapse."
                 cands))))
 
 (defun org-upwell-expand (&optional marker choose)
-  "Expand the domain of a heading.
+  "Lay the domain of a heading out on the bench.
+
+It opens nothing.  Which files a heading has is a question, and the
+answer is a list to be read: where each one lives and what it is are
+what make it worth trusting, and neither can be read from an
+application that has already taken the screen.  Opening is a second
+act, from the bench, where you can see what you are about to open --
+\\<org-upwell-bench-mode-map>\\[org-upwell-bench-open-at-point] for the
+one under the cursor, \\[org-upwell-bench-open-marked] for the marked
+ones, \\[org-upwell-bench-open-all] for all of them.
 
 With a heading at point (Org, agenda, or the bench), that heading.
 With a running clock and nothing at point, the clocked heading.
@@ -377,18 +398,14 @@ same key in every buffer.
 With a prefix argument, CHOOSE is non-nil and the heading is always
 read from that list, whatever point is on.
 
-If the bench is showing, it switches to this heading.  If agenda
-stole the window, it puts the bench back.  After `q', it stays
-gone -- expanding does not open a listing the user dismissed.
-Neither the bench nor an agenda gives up its window to the Org
-file; from an Org buffer, point lands on the heading."
+Neither the bench nor an agenda gives up its window to the Org file;
+from an Org buffer, point lands on the heading."
   (interactive (list nil current-prefix-arg))
   (let* ((marker (or marker
                      (and (not choose) (org-upwell--current-heading-marker))
                      (org-upwell--read-heading-marker)))
          (domain (org-upwell-domain marker))
          (items (plist-get domain :items))
-         (opened 0)
          (here (selected-window)))
     (when (and org-upwell-expand-clock-in
                (not (org-clocking-p)))
@@ -396,17 +413,10 @@ file; from an Org buffer, point lands on the heading."
     (org-with-point-at marker
       (org-fold-show-entry)
       (org-fold-show-children))
-    (when (and org-upwell-expand-open-location
-               (org-upwell--looks-like-url (plist-get domain :location)))
-      (org-upwell--open-url (plist-get domain :location)))
-    (dolist (m items)
-      (when (< opened org-upwell-expand-max)
-        (condition-case err
-            (progn (org-upwell-open m)
-                   (setq opened (1+ opened)))
-          (error (message "org-upwell: %s" (error-message-string err))))))
     (setq org-upwell-last-expanded-id (plist-get domain :id))
-    (org-upwell--maybe-refresh-bench marker)
+    ;; Drawn rather than merely refreshed: this is the command for asking
+    ;; to see the list, so it answers even after `q' dismissed it.
+    (org-upwell-bench domain)
     ;; The window C-c v was pressed in keeps its buffer when that buffer
     ;; is the bench or an agenda.  Both are ways of reading the heading,
     ;; not somewhere to put its file: replacing the bench with the Org
@@ -420,10 +430,10 @@ file; from an Org buffer, point lands on the heading."
           (switch-to-buffer (marker-buffer marker)))
         (goto-char marker)
         (org-fold-show-entry)))
-    (message "org-upwell: expanded \"%s\" (%d file%s)"
+    (message "org-upwell: \"%s\" -- %d file%s on the bench"
              (plist-get domain :title)
-             opened
-             (if (= opened 1) "" "s"))))
+             (length items)
+             (if (= (length items) 1) "" "s"))))
 
 (defun org-upwell-expand-clock ()
   "Expand the heading currently being clocked."
@@ -607,8 +617,10 @@ reorganizes the frame, the bench is allowed to disappear."
                            (plist-get domain :items) buf)))
               (dolist (m (plist-get domain :items))
                 (org-upwell--bench-insert-item m domain widths))))
-          (insert (propertize "Drop a file or URL here to pin it to this heading.\n"
-                              'face 'shadow))
+          (insert "\n" (org-upwell--bench-legend
+                         (let ((win (get-buffer-window buf nil)))
+                           (if (window-live-p win) (window-body-width win)
+                             (frame-width)))))
           (goto-char (point-min))
           (setq buffer-read-only t))))
     (let ((win (org-upwell--show-bench-buffer buf)))
@@ -634,7 +646,7 @@ puts it back.  After `q', the bench stays gone."
   "Return S in WIDTH columns, keeping the end when it has to be cut.
 
 The end is the part that tells two of them apart: files with the same
-name are in different folders, and the folder is the last thing on the
+name are in different directories, and the directory is the last thing on the
 line before the name."
   (let ((w (string-width s)))
     (if (or (<= w width) (< width 2))
@@ -649,10 +661,10 @@ Also reads the URL out of a minted office protocol, which has one inside it."
        (match-string 1 url)))
 
 (defun org-upwell--item-where (item)
-  "Return where ITEM is: the folder for a file, the host for a URL.
+  "Return where ITEM is: the directory for a file, the host for a URL.
 
 Never the name again.  A bench with two lines called the same thing is
-answered by the folder, and by nothing else on the line."
+answered by the directory, and by nothing else on the line."
   (let ((path (plist-get item :path))
         (url (or (plist-get item :url) (plist-get item :office))))
     (cond
@@ -664,7 +676,7 @@ answered by the folder, and by nothing else on the line."
 (defun org-upwell--fit-where (item width)
   "Where ITEM is, cut to WIDTH from whichever end can be spared.
 
-A folder is cut from the left: two copies of one file sit in the same tree
+A directory is cut from the left: two copies of one file sit in the same tree
 down to the last name or two, so the end is the whole of the answer.  A host
 is cut from the right, because it says the same thing the other way round --
 what tells two of them apart is the first label, and every one of them ends
@@ -690,8 +702,8 @@ in the same handful of characters."
 (defun org-upwell--bench-widths (items buf)
   "Return (NAME-WIDTH . WHERE-WIDTH) for ITEMS listed in BUF.
 
-The name column is as wide as the longest name, within reason.  The folder
-column is as wide as the longest folder, up to what the window has left
+The name column is as wide as the longest name, within reason.  The
+directory column is as wide as the longest one, up to what the window has left
 after the columns that follow it -- so a wide frame does not put a hand's
 width of blank between two short columns."
   (let* ((win (get-buffer-window buf nil))
@@ -717,10 +729,10 @@ width of blank between two short columns."
          (marked (and id (member id org-upwell-bench-marked)))
          (name-w (car widths))
          (where-w (cdr widths))
-         ;; The name keeps its beginning and the folder keeps its end, which
+         ;; The name keeps its beginning and the directory keeps its end, which
          ;; are opposite on purpose: a name says what the thing is in its
-         ;; first word, and a folder says which of two it is in its last.
-         ;; Cutting a name from the same end as a folder left every row that
+         ;; first word, and a directory says which of two it is in its last.
+         ;; Cutting a name from the same end as a directory left every row that
          ;; came from one browser reading the same three words.
          (shown (truncate-string-to-width name name-w nil nil t))
          (start (point)))
@@ -797,13 +809,30 @@ The bench window is left as the bench."
     (org-upwell-open m 'emacs)))
 
 (defun org-upwell-bench-open-all ()
-  "Open every item on the current domain."
+  "Open every item on the current domain, and its LOCATION if that is a URL.
+
+The one command in the package that opens in bulk, and it is on the
+bench because that is where the list can be seen first.  Above
+`org-upwell-expand-max\=' it says how many and waits: the number is the
+whole warning, since what is about to happen is that many applications
+starting at once."
   (interactive)
   (let* ((domain org-upwell-bench-domain)
          (items (and domain (plist-get domain :items)))
+         (location (and org-upwell-expand-open-location
+                        (org-upwell--looks-like-url
+                         (plist-get domain :location))
+                        (plist-get domain :location)))
+         (total (+ (length items) (if location 1 0)))
          (n 0))
     (unless items
       (user-error "No files on this heading"))
+    (when (and (> total org-upwell-expand-max)
+               (not (y-or-n-p (format "Open %d things at once? " total))))
+      (user-error "Nothing opened"))
+    (when location
+      (org-upwell--open-url location)
+      (setq n (1+ n)))
     (dolist (m items)
       (condition-case err
           (progn (org-upwell-open m) (setq n (1+ n)))
@@ -908,6 +937,23 @@ Marks go: what they pointed at may not be there any more."
     (goto-char (point-min))
     (forward-line (1- line))))
 
+(defun org-upwell-bench-redraw ()
+  "Read the store again and draw this bench.
+
+Wanted most while the clock is running.  The watcher keeps sighting
+things and `org-upwell-sync\=' keeps attributing them to the heading
+being clocked, so a bench left open goes quietly out of date -- and
+tidying a heading while its clock runs, then clocking out, is the
+ordinary way round.  This is the key that makes the list agree with
+the store again.
+
+The heading is this bench\='s own, not whatever point happens to be on
+elsewhere, so redrawing never switches the list underneath you."
+  (interactive)
+  (unless (derived-mode-p 'org-upwell-bench-mode)
+    (user-error "Not the bench"))
+  (org-upwell--bench-redraw))
+
 (defun org-upwell-bench-keep ()
   "Keep the marked items, or this one, on this heading.
 
@@ -978,7 +1024,7 @@ recording at all.  The file on disk is not touched."
   "Whether the bench says in the echo area what the line at point is.
 
 A row is a set of columns, and a column is a width: a name longer than its
-own is cut, and two files kept in the same tree are told apart by a folder
+own is cut, and two files kept in the same tree are told apart by a directory
 that has been cut as well.  The row is what a page of them is *for* -- it is
 read down, at a glance -- so the answer to \"which one is this, exactly\" goes
 where a glance already goes when it wants more, rather than into a wider
@@ -1001,18 +1047,123 @@ is: the two things the row had to shorten."
         (concat (or (plist-get m :name) "?")
                 (if where (concat "  " where) ""))))))
 
+
+;; A bench is read for half a minute and then not again until tomorrow,
+;; which is exactly the window whose keys nobody remembers.  So it says
+;; them, at the foot, where a list ends and the question "now what" begins.
+;;
+;; The keys are read from the keymap rather than written down here.  That is
+;; not caution: a configuration is expected to move them -- this one's does,
+;; putting `g' back on motion and redraw on `gr' -- and a legend that stated
+;; `g' would then be a printed lie at the foot of every bench.
+
+(defconst org-upwell-bench-commands
+  '((org-upwell-bench-open-at-point    row  "open it")
+    (org-upwell-bench-open-in-emacs    row  "open in Emacs")
+    (org-upwell-open-directory         row  "its directory")
+    (org-upwell-bench-toggle-mark      row  "mark, move down")
+    (org-upwell-bench-unmark           row  "unmark, move up")
+    (org-upwell-bench-keep             row  "keep it here")
+    (org-upwell-bench-drop             row  "drop from here")
+    (org-upwell-bench-reassign         row  "move elsewhere")
+    (org-upwell-bench-forget           row  "forget entirely")
+    (org-upwell-bench-open-all         page "open every one")
+    (org-upwell-bench-open-marked      page "open the marked")
+    (org-upwell-bench-mark-toggle-all  page "invert marks")
+    (org-upwell-bench-unmark-all       page "unmark them all")
+    (org-upwell-bench-redraw           page "read the store")
+    (org-upwell-bench-add-file         page "add a file")
+    (org-upwell-bench-add-url          page "add a URL")
+    (org-upwell-visit-store            page "the store file")
+    (org-upwell-bench-quit             page "hide the bench"))
+  "What the foot of the bench names: (COMMAND SCOPE WHAT).
+
+SCOPE is `row\=' for the commands that act on the line under the cursor --
+or on the marked lines, where a command takes marks -- and `page\=' for the
+ones that do not care where point is.  Worth separating, because the
+failure is otherwise a puzzle: a row command pressed on the title line
+says only that there is no item there.
+
+WHAT is held to 15 columns.  The bench is half a window wide; two of
+these pairs have to sit side by side in it, and the layout falls back to
+one column when even that will not fit.")
+
+(defun org-upwell--bench-command-key (command)
+  "The key COMMAND is on in this buffer, or nil when it is on none.
+
+`substitute-command-keys\=' answers with \\[execute-extended-command] and
+the name where nothing is bound, which is how an unbound one is known."
+  (let ((keys (substitute-command-keys (format "\\[%s]" command))))
+    (unless (string-prefix-p "M-x " keys) keys)))
+
+(defun org-upwell--bench-legend (&optional width)
+  "The foot of the bench: what can be done from here, and which key does it.
+
+WIDTH is the columns available, defaulting to this buffer's window."
+  (let* ((width (or width
+                    (let ((win (get-buffer-window (current-buffer) nil)))
+                      (if (window-live-p win) (window-body-width win)
+                        (frame-width)))))
+         (rows (mapcar (pcase-lambda (`(,command ,scope ,what))
+                         (list scope
+                               (or (org-upwell--bench-command-key command) "")
+                               what))
+                       org-upwell-bench-commands))
+         (keyw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 1 r))) rows)))
+         (whatw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 2 r))) rows)))
+         (cell (+ 4 keyw 2 whatw))
+         (pairs (if (>= width (+ (* 2 cell) 2)) 2 1))
+         (out ""))
+    (pcase-dolist (`(,scope ,heading ,short)
+                   '((row "on this line, or the marked ones"
+                          "this line, or the marked")
+                     (page "on the bench" "on the bench")))
+      (let ((group (seq-filter (lambda (r) (eq (nth 0 r) scope)) rows)))
+        (setq out (concat out
+                          (propertize
+                           (format "%s\n" (if (<= (string-width heading) width)
+                                              heading short))
+                           'face 'shadow)))
+        ;; Down the first column and then down the second, so the eye
+        ;; reads a column rather than hopping across a row.
+        (let* ((n (length group))
+               (per (if (= pairs 2) (/ (+ n 1) 2) n)))
+          (dotimes (i per)
+            (let ((line ""))
+              (dotimes (c pairs)
+                (when-let ((r (nth (+ i (* c per)) group)))
+                  (setq line
+                        (concat line
+                                (format (format "    %%-%ds  " keyw) (nth 1 r))
+                                (propertize
+                                 (format (format "%%-%ds" whatw) (nth 2 r))
+                                 'face 'shadow)))))
+              (setq out (concat out (string-trim-right line) "\n")))))))
+    ;; The longest of these that fits.  The bench truncates rather than
+    ;; wraps, so a line too long for the window is not a line that wraps --
+    ;; it is a line whose end nobody ever sees.
+    (concat out
+            (propertize
+             (concat (seq-find (lambda (line) (<= (string-width line) width))
+                               '("Drop a file or URL here to pin it to this heading."
+                                 "Drop a file or URL here to pin it."
+                                 "Drop here to pin.")
+                               "")
+                     "\n")
+             'face 'shadow))))
+
 (defvar org-upwell-bench-mode-map (make-sparse-keymap))
 (let ((map org-upwell-bench-mode-map))
   (set-keymap-parent map special-mode-map)
   (define-key map (kbd "q") #'org-upwell-bench-quit)
-  (define-key map (kbd "g") #'org-upwell-bench)
+  (define-key map (kbd "g") #'org-upwell-bench-redraw)
   (define-key map (kbd "n") #'next-line)
   (define-key map (kbd "p") #'previous-line)
   (define-key map (kbd "j") #'next-line)
   (define-key map (kbd "k") #'previous-line)
   (define-key map (kbd "o") #'org-upwell-visit-store)
   (define-key map (kbd "e") #'org-upwell-bench-open-in-emacs)
-  (define-key map (kbd "f") #'org-upwell-open-folder)
+  (define-key map (kbd "f") #'org-upwell-open-directory)
   (define-key map (kbd "RET") #'org-upwell-bench-open-at-point)
   (define-key map (kbd "a") #'org-upwell-bench-open-all)
   (define-key map (kbd "x") #'org-upwell-bench-open-marked)
@@ -1023,7 +1174,8 @@ is: the two things the row had to shorten."
   (define-key map (kbd "c") #'org-upwell-bench-keep)
   (define-key map (kbd "d") #'org-upwell-bench-drop)
   (define-key map (kbd "D") #'org-upwell-bench-forget)
-  (define-key map (kbd "r") #'org-upwell-bench-reassign)
+  (define-key map (kbd "r") #'org-upwell-bench-redraw)
+  (define-key map (kbd "R") #'org-upwell-bench-reassign)
   (define-key map (kbd "+") #'org-upwell-bench-add-file)
   (define-key map (kbd "L") #'org-upwell-bench-add-url))
 
@@ -1034,10 +1186,11 @@ Not an editing buffer.  Emacs state (same as org-dayflow): `o' must
 open the store in another window, not `evil-open-below', and not by
 replacing the bench.  RET / a / x open with the OS.  `e' visits inside
 Emacs, still not in the bench.  `j' / `k' still move.  `U' unmarks
-all, like dired.  `g' redraws.  `q' deletes the strip; follow will
-not cut another one until the heading changes.
+all, like dired.  `g' and `r' both read the store again, which is what
+a bench left open while the clock runs needs.  `q' deletes the strip;
+follow will not cut another one until the heading changes.
 
-`f' opens the folder the file is in, with the file selected: the folder
+`f' opens the directory the file is in, with the file selected: the directory
 is what tells two files of the same name apart, so it is also where to
 go and look.
 
@@ -1046,9 +1199,13 @@ where it actually is, which are the two things a column had to shorten.
 
 `c' and `d' are the two answers to a claim the clock proposed: keep it
 on this heading, or take it off and have that stay said.  `D' deletes
-the item from the store.  `r' moves it to another heading.  `+' and
+the item from the store.  `R' moves it to another heading.  `+' and
 `L' add a file and a URL.  All of them act on the marks when there are
 marks, and on this line when there are none.
+
+The foot of the buffer names all of this, with the key each one is on
+in this buffer -- read from the keymap, so it stays true wherever a
+configuration has moved them.
 
 \\{org-upwell-bench-mode-map}"
   (setq truncate-lines t)

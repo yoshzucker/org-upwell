@@ -77,8 +77,8 @@ Watch() {
                 url := BrowserUrl(hwnd)
             }
         } else if (InStr(exe, "explorer") = 1) {
-            path := ExplorerSelected(&folderOnly)
-            if (folderOnly) {
+            path := ExplorerSelected(&dirOnly)
+            if (dirOnly) {
                 kind := "dir"
             }
         }
@@ -142,11 +142,13 @@ BrowserUrl(hwnd) {
     return url
 }
 
-ExplorerSelected(&folderOnly) {
-    ; folderOnly says the answer is the window's own folder rather than
-    ; something picked out in it.  Emacs keeps files and drops the folder
+ExplorerSelected(&dirOnly) {
+    ; dirOnly says the answer is the window's own directory rather than
+    ; something picked out in it.  Emacs keeps files and drops the directory
     ; somebody merely had open, and cannot tell the two apart from a path.
-    folderOnly := false
+    ; Shell.Application calls it Folder because Windows does; the rest of
+    ; org-upwell says directory.
+    dirOnly := false
     try {
         shell := ComObject("Shell.Application")
         hwnd := WinExist("A")
@@ -156,7 +158,7 @@ ExplorerSelected(&folderOnly) {
                     sel := window.Document.SelectedItems
                     if (sel.Count > 0)
                         return sel.Item(0).Path
-                    folderOnly := true
+                    dirOnly := true
                     return window.Document.Folder.Self.Path
                 }
             } catch {

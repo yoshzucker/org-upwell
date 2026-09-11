@@ -214,19 +214,24 @@ named is not guessable, and is left."
         (setq out (replace-regexp-in-string re "" out)))
       (string-trim out))))
 
-(defun org-upwell-trace-folder-p (trace)
-  "Return non-nil when TRACE is a folder somebody had open.
+(defun org-upwell-trace-directory-p (trace)
+  "Return non-nil when TRACE is a directory somebody had open.
 
-A folder in front is where the work was kept, not a thing to open from a
-heading, and the bench is a list of things to open.  One a person put
+A directory in front is where the work was kept, not a thing to open from
+a heading, and the bench is a list of things to open.  One a person put
 there on purpose -- a pin, a drop -- is a different act and is kept.
 
 `kind\=' cannot answer this on its own: the Windows watcher reports the
-folder it read as a file, and a selected item may be a folder too.  So
-the disk is asked, after `kind\=' has had its say."
+directory it read as a file, and a selected item may be a directory too.
+So the disk is asked, after `kind\=' has had its say."
   (let ((path (plist-get trace :path)))
     (or (eq (plist-get trace :kind) 'dir)
         (and path (file-directory-p path)))))
+
+(define-obsolete-function-alias 'org-upwell-trace-folder-p
+  'org-upwell-trace-directory-p "0.2"
+  "Renamed: a directory is a directory everywhere but in Windows\=' own
+vocabulary, and this package speaks its own.")
 
 (defun org-upwell-trace-to-spec (trace)
   "Turn TRACE into an item spec plist."

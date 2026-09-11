@@ -429,17 +429,47 @@ keeps its width *and* its height; the other one pays for the strip."
                     (org-with-point-at (org-upwell-test--heading-marker file 2)
                       (org-id-get)))))))
 
-(ert-deftest org-upwell-test-expand-does-not-open-a-hidden-bench ()
-  "Expand opens files; a hidden listing stays hidden."
+(ert-deftest org-upwell-test-expand-opens-nothing ()
+  "Which files a heading has is a question, and the answer is a list.
+
+Expand used to open up to `org-upwell-expand-max\=' of them before anybody
+had seen what they were -- with an opener that hands a path to the OS,
+that is eight applications taking the screen.  Opening is a second act,
+from the bench."
+  (org-upwell-test--with-dir
+   (let* ((file (org-upwell-test--write-journal
+                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+          (opened 0))
+     (dolist (name '("a.txt" "b.txt" "c.txt"))
+       (let ((p (expand-file-name name dir)))
+         (write-region "x" nil p)
+         (org-upwell-claim
+          (org-upwell-save (list :path p :name name :provenance "pin"))
+          "T1" 'confirmed)))
+     (cl-letf (((symbol-function 'org-upwell-open)
+                (lambda (&rest _) (setq opened (1+ opened)))))
+       (org-upwell-expand (org-upwell-test--heading-marker file)))
+     (should (= 0 opened))
+     ;; and what it did instead is show them
+     (should (get-buffer "*org-upwell*"))
+     (with-current-buffer "*org-upwell*"
+       (dolist (name '("a.txt" "b.txt" "c.txt"))
+         (goto-char (point-min))
+         (should (search-forward name nil t)))))))
+
+(ert-deftest org-upwell-test-expand-answers-after-q ()
+  "`q\=' dismissed the listing; asking for it again is asking for it again.
+
+It declined once, from the days when expand opened the files and the
+listing was a side effect.  Now the listing is the whole answer, so
+declining would make C-c v do nothing at all."
   (org-upwell-test--with-dir
    (let ((file (org-upwell-test--write-journal
-                "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
-         (called nil))
-     (cl-letf (((symbol-function 'org-upwell-bench)
-                (lambda (&rest _) (setq called t))))
-       (org-upwell-expand (org-upwell-test--heading-marker file)))
-     (should-not called)
-     (should-not (get-buffer "*org-upwell*")))))
+                "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
+     (let ((org-upwell--bench-intent 'dismissed))
+       (org-upwell-expand (org-upwell-test--heading-marker file))
+       (should (get-buffer "*org-upwell*"))
+       (should (eq org-upwell--bench-intent 'wanted))))))
 
 (ert-deftest org-upwell-test-expand-switches-a-showing-bench ()
   "C-c v on another heading must redraw the bench if it is already up.
@@ -1026,17 +1056,17 @@ whole store, so landing there is felt as the typing catching."
            (should (timer--idle-delay org-upwell--sync-timer)))
        (org-upwell-mode -1)))))
 
-;;;; Folders
+;;;; Directories
 
-(ert-deftest org-upwell-test-basename-of-a-folder ()
-  "A folder arrives with a separator on the end, and
+(ert-deftest org-upwell-test-basename-of-a-directory ()
+  "A directory arrives with a separator on the end, and
 `file-name-nondirectory' answers nothing at all for such a path."
   (should (equal (org-upwell-basename "/a/b/project/") "project"))
   (should (equal (org-upwell-basename "/a/b/c.txt") "c.txt"))
   (should (null (org-upwell-basename "/")))
   (should (null (org-upwell-basename nil))))
 
-(ert-deftest org-upwell-test-a-folder-trace-is-named-after-the-folder ()
+(ert-deftest org-upwell-test-a-directory-trace-is-named-after-the-directory ()
   "The watcher reports the window a person had open when nothing in it
 was selected.  A nameless item is a blank line on the bench."
   (let ((tr (org-upwell--trace-from-alist
@@ -1048,16 +1078,16 @@ was selected.  A nameless item is a blank line on the bench."
     (should (equal (plist-get tr :name) "project"))
     (should (equal (plist-get (org-upwell-trace-to-spec tr) :name) "project"))))
 
-(ert-deftest org-upwell-test-pinning-a-folder-names-it ()
+(ert-deftest org-upwell-test-pinning-a-directory-names-it ()
   (org-upwell-test--with-dir
-   (let ((folder (file-name-as-directory (expand-file-name "papers" dir))))
-     (make-directory folder t)
-     (should (equal (plist-get (org-upwell--spec-from-path folder) :name)
+   (let ((directory (file-name-as-directory (expand-file-name "papers" dir))))
+     (make-directory directory t)
+     (should (equal (plist-get (org-upwell--spec-from-path directory) :name)
                     "papers")))))
 
-(ert-deftest org-upwell-test-open-folder-reveals-the-file-that-is-there ()
-  "Not the folder the path was stored with: a file filed away into a `done'
-folder is resolved first, and the folder to stand in is the new one."
+(ert-deftest org-upwell-test-open-directory-reveals-the-file-that-is-there ()
+  "Not the directory the path was stored with: a file filed away into a `done'
+directory is resolved first, and the directory to stand in is the new one."
   (org-upwell-test--with-dir
    (let* ((a (expand-file-name "sheet.xlsx" dir))
           (sub (expand-file-name "done" dir))
@@ -1070,78 +1100,78 @@ folder is resolved first, and the folder to stand in is the new one."
        (let ((org-upwell-search-roots (list dir)))
          (cl-letf (((symbol-function 'org-upwell--reveal-external)
                     (lambda (path) (setq revealed path))))
-           (org-upwell-open-folder (org-upwell-find :id (plist-get m :id))))))
+           (org-upwell-open-directory (org-upwell-find :id (plist-get m :id))))))
      (should revealed)
      (should (equal (file-truename revealed) (file-truename b))))))
 
-(ert-deftest org-upwell-test-open-folder-says-a-url-has-none ()
+(ert-deftest org-upwell-test-open-directory-says-a-url-has-none ()
   (org-upwell-test--with-dir
    (let ((m (org-upwell-save (list :url "https://example.com/a"
                                    :name "a page"))))
-     (should-error (org-upwell-open-folder m) :type 'user-error))))
+     (should-error (org-upwell-open-directory m) :type 'user-error))))
 
-(ert-deftest org-upwell-test-a-folder-trace-is-known-for-one ()
-  "`kind' cannot answer alone: the Windows watcher calls the folder it
+(ert-deftest org-upwell-test-a-directory-trace-is-known-for-one ()
+  "`kind' cannot answer alone: the Windows watcher calls the directory it
 read a file, so the disk is asked as well."
   (org-upwell-test--with-dir
-   (let ((folder (expand-file-name "papers" dir))
+   (let ((directory (expand-file-name "papers" dir))
          (file (expand-file-name "papers/a.txt" dir)))
-     (make-directory folder t)
+     (make-directory directory t)
      (write-region "x" nil file)
-     (should (org-upwell-trace-folder-p (list :path folder :kind 'file)))
-     (should (org-upwell-trace-folder-p (list :path "/gone/away/" :kind 'dir)))
-     (should-not (org-upwell-trace-folder-p (list :path file :kind 'file))))))
+     (should (org-upwell-trace-directory-p (list :path directory :kind 'file)))
+     (should (org-upwell-trace-directory-p (list :path "/gone/away/" :kind 'dir)))
+     (should-not (org-upwell-trace-directory-p (list :path file :kind 'file))))))
 
-(ert-deftest org-upwell-test-a-folder-walked-through-is-not-an-item ()
-  "The bench lists things to open.  A folder somebody had open on the way
+(ert-deftest org-upwell-test-a-directory-walked-through-is-not-an-item ()
+  "The bench lists things to open.  A directory somebody had open on the way
 to a file is where the work was kept, and the file is already there."
   (org-upwell-test--with-dir
-   (let* ((folder (expand-file-name "procurement" dir))
+   (let* ((directory (expand-file-name "procurement" dir))
           (sheet (expand-file-name "procurement/quote.csv" dir))
           (file (org-upwell-test--write-journal
                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
           (mk (org-upwell-test--heading-marker file))
           (now (current-time)))
-     (make-directory folder t)
+     (make-directory directory t)
      (write-region "x" nil sheet)
      (org-upwell-test--write-trace
-      (floor (float-time (time-subtract now 1800))) folder)
+      (floor (float-time (time-subtract now 1800))) directory)
      (org-upwell-test--write-trace
       (floor (float-time (time-subtract now 1500))) sheet)
      (org-upwell-claim-interval mk (time-subtract now 3600) now)
      (should (org-upwell-find :path sheet))
-     (should-not (org-upwell-find :path folder))
+     (should-not (org-upwell-find :path directory))
      (should (equal (list "quote.csv")
                     (mapcar (lambda (m) (plist-get m :name))
                             (org-upwell-claimed-to "T1")))))))
 
-(ert-deftest org-upwell-test-a-spell-of-only-folders-writes-no-id ()
+(ert-deftest org-upwell-test-a-spell-of-only-directories-writes-no-id ()
   "`org-upwell-heading-id' creates an ID in the user's own file.  A spell
 with nothing to claim has no business leaving a mark there."
   (org-upwell-test--with-dir
-   (let* ((folder (expand-file-name "procurement" dir))
+   (let* ((directory (expand-file-name "procurement" dir))
           (file (org-upwell-test--write-journal "* NEXT Task\n"))
           (mk (org-upwell-test--heading-marker file))
           (now (current-time)))
-     (make-directory folder t)
+     (make-directory directory t)
      (org-upwell-test--write-trace
-      (floor (float-time (time-subtract now 1800))) folder)
+      (floor (float-time (time-subtract now 1800))) directory)
      (org-upwell-claim-interval mk (time-subtract now 3600) now)
      (should-not (org-with-point-at mk (org-id-get))))))
 
-(ert-deftest org-upwell-test-sync-leaves-no-unclaimed-folder ()
+(ert-deftest org-upwell-test-sync-leaves-no-unclaimed-directory ()
   "Off the clock a trace becomes an unclaimed item, a row to deal with
-later.  A folder walked through is not a row to deal with."
+later.  A directory walked through is not a row to deal with."
   (org-upwell-test--with-dir
-   (let ((folder (expand-file-name "procurement" dir)))
-     (make-directory folder t)
-     (org-upwell-test--write-trace (floor (float-time (current-time))) folder)
+   (let ((directory (expand-file-name "procurement" dir)))
+     (make-directory directory t)
+     (org-upwell-test--write-trace (floor (float-time (current-time))) directory)
      (org-upwell-sync 1)
-     (should-not (org-upwell-find :path folder)))))
+     (should-not (org-upwell-find :path directory)))))
 
 ;;;; What the bench line says
 
-(ert-deftest org-upwell-test-where-is-the-folder-not-the-name ()
+(ert-deftest org-upwell-test-where-is-the-directory-not-the-name ()
   "The name is already the first thing on the line."
   (should (equal (org-upwell--item-where (list :path "/tmp/a/b/c.xlsx"))
                  "/tmp/a/b"))
@@ -1152,10 +1182,10 @@ later.  A folder walked through is not a row to deal with."
                   (list :office "ms-excel:ofe|u|https://share.example/a/f.xlsx"))
                  "share.example")))
 
-(ert-deftest org-upwell-test-a-folder-too-long-keeps-its-end ()
+(ert-deftest org-upwell-test-a-directory-too-long-keeps-its-end ()
   "Cutting the end off leaves every deep path looking like every other.
 
-Two copies of one file are in the same tree up to the last folder or
+Two copies of one file are in the same tree up to the last directory or
 two, so the end is the whole of the answer."
   (let ((cut (org-upwell--tail "/home/me/Documents/project/2026/q3/meeting" 20)))
     (should (= 20 (string-width cut)))
@@ -1173,7 +1203,7 @@ two, so the end is the whole of the answer."
   (should (equal (org-upwell--ago (list :name "never opened")) "")))
 
 (ert-deftest org-upwell-test-bench-tells-two-of-the-same-name-apart ()
-  "Two files called the same thing, kept in two folders.
+  "Two files called the same thing, kept in two directories.
 
 A listing that shows only the name asks which one to open and gives
 nothing to answer with."
@@ -1201,7 +1231,7 @@ nothing to answer with."
          (should (string-match-p "/a +pin" text))
          (should (string-match-p "/b +drop" text)))))))
 
-(ert-deftest org-upwell-test-the-folder-column-is-only-as-wide-as-it-needs ()
+(ert-deftest org-upwell-test-the-directory-column-is-only-as-wide-as-it-needs ()
   "On a wide frame, a column padded to the width left over puts a hand's
 width of blank between two short columns."
   (let ((short (list (list :path "/a/b/x.txt")))
@@ -1236,7 +1266,7 @@ every page whose title ends in a phrase."
 
 (ert-deftest org-upwell-test-a-name-keeps-its-beginning ()
   "A name says what the thing is in its first word.  Cut from the same end as
-a folder, every row that came out of one browser read the same three words."
+a directory, every row that came out of one browser read the same three words."
   (org-upwell-test--with-dir
     (let* ((file (org-upwell-test--write-journal
                   "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
@@ -1256,7 +1286,7 @@ a folder, every row that came out of one browser read the same three words."
           (should (string-match-p "見積書の差し替え" text)))))))
 
 (ert-deftest org-upwell-test-a-host-is-cut-from-the-other-end ()
-  "A folder is told apart by its last name and a host by its first, so the
+  "A directory is told apart by its last name and a host by its first, so the
 two are cut from opposite ends.  Cut alike, every site behind one tenant
 reads as the same dozen characters."
   (org-upwell-test--with-dir
@@ -1269,7 +1299,7 @@ reads as the same dozen characters."
       (should-not (equal (org-upwell--fit-where one 14)
                          (org-upwell--fit-where two 14)))
       (should (string-prefix-p "contoso" (org-upwell--fit-where one 14)))
-      ;; and the folder still keeps its end
+      ;; and the directory still keeps its end
       (should (string-suffix-p "procurement" (org-upwell--fit-where dir 14))))))
 
 (ert-deftest org-upwell-test-the-bench-keys-are-announced ()
@@ -1551,6 +1581,133 @@ movement this setting exists to do without."
              (org-upwell--agenda-follow))
            (should (equal drawn mk)))
        (kill-buffer agenda)))))
+
+(ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
+  "The bench is the one place that opens in bulk, so it is the one place
+that has to say how many first.  `org-upwell-expand-max\=' is the number
+above which it asks; the number is the whole warning, because what is about
+to happen is that many applications starting at once."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (opened 0)
+           (asked nil))
+      (dolist (name '("a.txt" "b.txt" "c.txt" "d.txt"))
+        (let ((p (expand-file-name name dir)))
+          (write-region "x" nil p)
+          (org-upwell-claim
+           (org-upwell-save (list :path p :name name :provenance "pin"))
+           "T1" 'confirmed)))
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (cl-letf (((symbol-function 'org-upwell-open)
+                   (lambda (&rest _) (setq opened (1+ opened))))
+                  ((symbol-function 'y-or-n-p)
+                   (lambda (prompt) (setq asked prompt) nil)))
+          ;; under the cap: no question, and it opens
+          (let ((org-upwell-expand-max 8))
+            (org-upwell-bench-open-all))
+          (should-not asked)
+          (should (= 4 opened))
+          ;; over it: it asks, and "no" opens nothing
+          (setq opened 0)
+          (let ((org-upwell-expand-max 3))
+            (should-error (org-upwell-bench-open-all) :type 'user-error))
+          (should (string-match-p "4" (or asked "")))
+          (should (= 0 opened)))))))
+
+(ert-deftest org-upwell-test-r-reads-the-store-and-R-reassigns ()
+  "`r\=' is the key a bench left open while the clock runs needs: the watcher
+keeps sighting things and the sync keeps attributing them, so the list goes
+quietly out of date.  Reassign, which used to hold `r\=', moves up a case."
+  (should (eq (lookup-key org-upwell-bench-mode-map (kbd "r"))
+              #'org-upwell-bench-redraw))
+  (should (eq (lookup-key org-upwell-bench-mode-map (kbd "R"))
+              #'org-upwell-bench-reassign)))
+
+(ert-deftest org-upwell-test-redraw-picks-up-what-the-clock-attributed ()
+  "And it really re-reads: a claim written behind the bench's back -- which
+is what `org-upwell-sync\=' does every minute while the clock runs -- is on
+the list after `r\=' and was not before."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (p (expand-file-name "late.txt" dir)))
+      (org-upwell-bench (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should-not (search-forward "late.txt" nil t))
+        (write-region "x" nil p)
+        (org-upwell-claim
+         (org-upwell-save (list :path p :name "late.txt" :provenance "clock"))
+         "T1" 'provisional)
+        (org-upwell-bench-redraw)
+        (goto-char (point-min))
+        (should (search-forward "late.txt" nil t))))))
+
+(ert-deftest org-upwell-test-the-legend-names-only-live-commands ()
+  "A foot that names a command nobody can run is worse than no foot."
+  (should org-upwell-bench-commands)
+  (pcase-dolist (`(,command ,scope ,what) org-upwell-bench-commands)
+    (should (commandp command))
+    (should (memq scope '(row page)))
+    (should (stringp what))
+    (should (<= (string-width what) 15))))
+
+(ert-deftest org-upwell-test-the-legend-reads-the-keymap ()
+  "The keys are read from the keymap rather than written down, because a
+configuration is expected to move them -- this package's own dotfiles put
+`g\=' back on motion -- and a printed key would then be a printed lie."
+  (let ((moved (with-temp-buffer
+                 (use-local-map
+                  (let ((map (make-sparse-keymap)))
+                    (define-key map (kbd "Z") #'org-upwell-bench-open-all)
+                    map))
+                 (substring-no-properties (org-upwell--bench-legend 80)))))
+    (should (string-match-p "Z +open every one" moved)))
+  (let ((usual (with-temp-buffer
+                 (use-local-map org-upwell-bench-mode-map)
+                 (substring-no-properties (org-upwell--bench-legend 80)))))
+    (should (string-match-p "a +open every one" usual))
+    (should (string-match-p "R +move elsewhere" usual))))
+
+(ert-deftest org-upwell-test-the-legend-fits-a-narrow-bench ()
+  "The bench is half a window wide and truncates rather than wraps, so a
+line too long is not a line that wraps -- it is a line whose end nobody
+ever sees.  It falls back to one column, and to shorter wording, rather
+than off the edge."
+  (dolist (width '(80 60 46 40 30 24))
+    (with-temp-buffer
+      (use-local-map org-upwell-bench-mode-map)
+      (dolist (line (split-string
+                     (substring-no-properties (org-upwell--bench-legend width))
+                     "\n"))
+        (should (<= (string-width line) width))))))
+
+(ert-deftest org-upwell-test-the-legend-separates-row-from-page ()
+  "A row command pressed on the title line says only that there is no item
+there, which is a puzzle rather than an explanation.  So the foot says which
+is which."
+  (with-temp-buffer
+    (use-local-map org-upwell-bench-mode-map)
+    (let* ((text (substring-no-properties (org-upwell--bench-legend 80)))
+           (split (string-search "on the bench" text)))
+      (should split)
+      (should (< (string-search "keep it here" text) split))
+      (should (> (string-search "add a URL" text) split)))))
+
+(ert-deftest org-upwell-test-the-old-directory-names-still-answer ()
+  "Renamed, not removed: a configuration that called them by the old name
+keeps working, and finds out from the byte-compiler rather than from a
+void-function at the keyboard."
+  (should (fboundp 'org-upwell-open-folder))
+  (should (fboundp 'org-upwell-trace-folder-p))
+  (should (eq (indirect-function 'org-upwell-open-folder)
+              (indirect-function 'org-upwell-open-directory)))
+  (should (eq (indirect-function 'org-upwell-trace-folder-p)
+              (indirect-function 'org-upwell-trace-directory-p))))
 
 (provide 'org-upwell-test)
 

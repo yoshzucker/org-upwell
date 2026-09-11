@@ -4,9 +4,11 @@
 Files rising to the heading that is being lived.
 
 A user heading -- a project, a task, a meeting -- has a *domain*. Expanding
-the domain brings back the Org entry and the files and URLs that claim it.
-Those files are not listed under the heading; they point up at its id.
-~upwell.org~ is storage for those identities, not the work.
+the domain lays it out: the Org entry, and the files and URLs that claim it,
+each with where it lives. Reading comes before opening, and they are two
+acts -- where a thing is and what kind of thing it is are what make it worth
+opening at all. Those files are not listed under the heading; they point up
+at its id. ~upwell.org~ is storage for those identities, not the work.
 
 Capture happens *outside* Emacs. A resident watcher records the frontmost
 document and, when it can, the browser URL, without a hotkey and without
@@ -90,8 +92,8 @@ For a one-off test session only, and not how it should run day to day:
 
 | Command | What it does |
 |---|---|
-| ~org-upwell-expand~ | Expand the heading at point / the agenda row / the running clock. Opens files. If the bench is already showing, switches it to this heading. Neither the bench nor an agenda loses its window. With a prefix argument, always choose the heading from a list |
-| ~org-upwell-expand-clock~ | Expand whatever is being clocked (emacsclient-friendly) |
+| ~org-upwell-expand~ | Lay the heading at point / the agenda row / the running clock out on the bench. It opens nothing -- opening is done from the bench, where the list can be seen first. Neither the bench nor an agenda loses its window. With a prefix argument, always choose the heading from a list |
+| ~org-upwell-expand-clock~ | The bench of whatever is being clocked (emacsclient-friendly) |
 | ~org-upwell-pin~ | Catch a file or URL. Clock or heading at point → confirmed claim; else unclaimed |
 | ~org-upwell-create~ | New xlsx/pptx/…, claimed, no save-location prompt |
 | ~org-upwell-open-named~ | Completing-read over the store |
@@ -107,21 +109,48 @@ there are any, the line point is on when there are none.
 |---|---|
 | ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones, with the OS |
 | ~e~ | Visit inside Emacs, in another window |
-| ~f~ | Open the folder the file is in, with the file selected |
+| ~f~ | Open the directory the file is in, with the file selected |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |
 | ~d~ | Take it off this heading, and have that stay said |
 | ~D~ | Delete the item from the store. The file is not touched |
-| ~r~ | Move it to another heading |
+| ~R~ | Move it to another heading |
 | ~+~ / ~L~ | Add a file / a URL to this heading |
 | ~o~ | Visit ~upwell.org~ at this item |
-| ~g~ / ~q~ | Redraw / dismiss the strip |
+| ~r~ / ~g~ | Read the store again. Wanted while the clock runs: the sync keeps attributing things behind the bench's back |
+| ~q~ | Dismiss the strip |
+
+The foot of the bench names all of these, with the key each one is on /in
+that buffer/ -- read from the keymap rather than written down, so a
+configuration that moves them does not leave a printed lie at the foot of
+every bench. Two groups, because a row command pressed on the title line
+says only that there is no item there:
+
+#+begin_example
+on this line, or the marked ones
+    RET  open it            c    keep it here
+    e    open in Emacs      d    drop from here
+    f    its directory      R    move elsewhere
+    m    mark, move down    D    forget entirely
+    u    unmark, move up
+on the bench
+    a    open every one     +    add a file
+    x    open the marked    L    add a URL
+    t    invert marks       o    the store file
+    U    unmark them all    q    hide the bench
+    r    read the store
+Drop a file or URL here to pin it to this heading.
+#+end_example
+
+The bench is half a window wide and truncates rather than wraps, so the
+layout falls back to one column, and to shorter wording, rather than off
+the edge.
 
 ** What a row shows, and what it cannot
 
 A row is columns, and a column is a width. The name is cut from its end and
-the folder from its beginning, which are opposite on purpose: a name says
-what a thing is in its first word, and a folder says which of two it is in
+the directory from its beginning, which are opposite on purpose: a name says
+what a thing is in its first word, and a directory says which of two it is in
 its last. A host is cut like a name — what tells two of them apart is the
 first label, and every one of them ends in the same handful of characters.
 
@@ -173,9 +202,9 @@ listing marks them as provisional until ~c~ keeps them.
 ~org-upwell-review-on-clock-out~ can go back to the older single-line
 question, or say nothing at all.
 
-A folder somebody had open is recorded as a trace and does not become an
-item: the bench lists things to open, and the folder a file was found in
-is already on the file's line -- ~f~ goes there. A folder pinned or
+A directory somebody had open is recorded as a trace and does not become
+an item: the bench lists things to open, and the directory a file was found
+in is already on the file's line -- ~f~ goes there. A directory pinned or
 dropped on purpose is kept, like any other pin.
 
 The watcher does not know Org. If Emacs is closed, traces pile up and wait.
@@ -204,7 +233,7 @@ where ~org-upwell-create~ puts a new one is ~org-upwell-create-directory~
 
 - Not org-attach. A screenshot belongs to the note it illustrates; a
   spreadsheet belongs to the application that opens it.
-- Not a 1:1 heading-to-folder map. A folder is one appearance of an item,
+- Not a 1:1 heading-to-directory map. A directory is one appearance of an item,
   not its identity, and one file can belong to two headings.
 - Not a document archive. A scanned pile on disk stays on disk until
   something claims it.

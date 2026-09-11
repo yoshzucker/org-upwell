@@ -148,12 +148,12 @@ Already-confirmed claims for this heading are left alone, and items a
 person rejected for it are not proposed again.  PROVENANCE is recorded
 on a newly created item (default `trace')."
 
-  (let* ((traces (seq-remove #'org-upwell-trace-folder-p
+  (let* ((traces (seq-remove #'org-upwell-trace-directory-p
                              (org-upwell-unique-traces
                               (org-upwell-traces-in from to))))
          ;; Filtered before the id: `org-upwell-heading-id' writes an ID
          ;; into the user's file, and a spell that only walked through
-         ;; folders has nothing to claim and no reason to leave a mark.
+         ;; directories has nothing to claim and no reason to leave a mark.
          (heading-id (and traces (org-upwell-heading-id marker)))
          (prov (or provenance "trace"))
          claimed)
@@ -181,7 +181,7 @@ still findable and still a signal."
           (segments (org-upwell-clock-segments days))
           (from (org-upwell--day-start (1- days)))
           (to (current-time))
-          (traces (seq-remove #'org-upwell-trace-folder-p
+          (traces (seq-remove #'org-upwell-trace-directory-p
                               (org-upwell-unique-traces
                                (org-upwell-read-traces from to))))
           (n 0))

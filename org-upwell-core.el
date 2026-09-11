@@ -280,10 +280,10 @@ still a signal, it just has nowhere to rise to."
     f))
 
 (defun org-upwell-basename (path)
-  "Return the last component of PATH, whether it names a file or a folder.
+  "Return the last component of PATH, whether it names a file or a directory.
 
 `file-name-nondirectory' answers nothing at all for a path that ends in a
-separator, and that is the shape a folder arrives in: a watcher reporting
+separator, and that is the shape a directory arrives in: a watcher reporting
 the window somebody had open, rather than a file they had selected.  An
 item with no name is a blank line on the bench."
   (and path
