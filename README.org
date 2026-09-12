@@ -114,9 +114,9 @@ there are any, the line point is on when there are none.
 
 | Key | On the bench |
 |---|---|
-| ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones, with the OS |
+| ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones. A file goes to ~org-upwell-open-function~, which is a policy about which extensions belong to the OS and which to Emacs; a directory goes to dired, since that is what opening a directory means here |
 | ~e~ | Visit inside Emacs, in another window |
-| ~^~ | Go to the place this row lives in: the directory, with the file selected |
+| ~^~ | Go to the place this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
 | ~P~ | Keep that place, as an item of its own |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |

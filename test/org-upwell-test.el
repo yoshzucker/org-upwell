@@ -1789,23 +1789,26 @@ the one above, or the row says its own name twice."
   (should (equal "/tmp/a"
                  (org-upwell--item-where (list :path "/tmp/a/b" :kind "dir")))))
 
-(ert-deftest org-upwell-test-a-directory-is-stood-in-not-opened ()
-  "`org-upwell-open-function\=' is a policy about which extensions belong to
-the OS and which to Emacs.  A directory has no extension and no such
-answer."
+(ert-deftest org-upwell-test-a-directory-opens-in-dired ()
+  "Opening a directory, in Emacs, is dired.  `org-upwell-open-function\=' is
+a policy about which extensions belong to the OS and which to Emacs, and a
+directory has no extension for it to have an opinion about."
   (org-upwell-test--with-dir
-    (let ((sub (expand-file-name "papers" dir))
-          (revealed nil)
-          (opened nil))
+    (let ((sub (expand-file-name "papers" dir)))
       (make-directory sub t)
-      (let ((item (org-upwell-save (list :path sub))))
-        (cl-letf (((symbol-function 'org-upwell--reveal-external)
-                   (lambda (p) (setq revealed p)))
-                  ((symbol-function 'org-upwell--open-path-external)
-                   (lambda (p) (setq opened p))))
-          (org-upwell-open item))
-        (should (equal sub revealed))
-        (should-not opened)))))
+      (let ((item (org-upwell-save (list :path sub)))
+            (org-upwell-open-function
+             (lambda (_) (error "the file policy must not be asked"))))
+        (org-upwell-open item)
+        ;; a dired buffer has no `buffer-file-name', so it is found by what
+        ;; it is showing rather than by the file it visits
+        (should (seq-find
+                 (lambda (b)
+                   (with-current-buffer b
+                     (and (derived-mode-p 'dired-mode)
+                          (equal (file-name-as-directory sub)
+                                 (expand-file-name default-directory)))))
+                 (buffer-list)))))))
 
 
 (ert-deftest org-upwell-test-kind-goes-in-and-comes-back-the-same ()

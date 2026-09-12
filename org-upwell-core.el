@@ -60,7 +60,12 @@ which is why the default is a path that does not depend on `org-directory'
   "Function of one path used to open a local file, or nil.
 
 Nil uses `org-open-file'.  Dotfiles that already have an open policy
-\(office files to the OS, and so on) should set this to that function."
+\(office files to the OS, and so on) should set this to that function.
+
+A *file*, and only a file.  A directory is opened in dired, which is what
+opening a directory means in Emacs and is not a question about which
+extensions belong to which application.  The way out to the file manager
+is `org-upwell-open-directory', on its own key."
   :type '(choice (const :tag "org-open-file" nil) function)
   :group 'org-upwell)
 

@@ -189,12 +189,14 @@ growing the frame to keep the main window's size."
     (pcase (plist-get app :kind)
       ('path
        (cond
-        ;; `org-upwell-open-function' is a policy about which extensions
-        ;; belong to the OS and which to Emacs.  A directory has no
-        ;; extension and no such answer; standing in it is what opening one
-        ;; means.
+        ;; Opening a directory, in Emacs, is dired.  It goes there whichever
+        ;; key was pressed: `org-upwell-open-function' is a policy about
+        ;; which extensions belong to the OS and which to Emacs, and a
+        ;; directory has no extension for it to have an opinion about.
+        ;; \[org-upwell-open-directory] is the way out to the file manager,
+        ;; and is the same key whether the row is a file or a directory.
         ((org-upwell-directory-item-p item)
-         (org-upwell--reveal-external (plist-get app :value)))
+         (org-upwell--open-path-emacs (plist-get app :value)))
         ((eq method 'emacs)
          (org-upwell--open-path-emacs (plist-get app :value)))
         (t (org-upwell--open-path-external (plist-get app :value)))))
