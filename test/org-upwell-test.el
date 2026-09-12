@@ -1649,6 +1649,34 @@ quietly out of date.  Reassign, which used to hold `r\=', moves up a case."
   (should (eq (lookup-key org-upwell-bench-mode-map (kbd "R"))
               #'org-upwell-bench-reassign)))
 
+(ert-deftest org-upwell-test-redraw-takes-in-a-fresh-sighting ()
+  "A sighting is not a claim: the timer is what intersects the two, and it
+runs once a minute.  Reading the store without asking would show what the
+last timer happened to catch, so the directory you walked into a moment
+ago would not be there and the key would look broken."
+  (org-upwell-test--with-dir
+    (let* ((here (expand-file-name "acme" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (float-time)))
+      (make-directory here t)
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      ;; a clock that is running now, and a sighting inside it -- but no sync
+      (org-with-point-at mk
+        (org-clock-in nil (seconds-to-time (- now 600))))
+      (unwind-protect
+          (progn
+            (org-upwell-trace-write :path here :kind "dir")
+            (with-current-buffer "*org-upwell*"
+              (goto-char (point-min))
+              (should-not (search-forward "acme" nil t))
+              (org-upwell-bench-redraw)
+              (goto-char (point-min))
+              (should (search-forward "acme" nil t))))
+        (let ((org-upwell-review-on-clock-out nil))
+          (org-clock-out))))))
+
 (ert-deftest org-upwell-test-redraw-picks-up-what-the-clock-attributed ()
   "And it really re-reads: a claim written behind the bench's back -- which
 is what `org-upwell-sync\=' does every minute while the clock runs -- is on

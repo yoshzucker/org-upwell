@@ -92,7 +92,8 @@ Point must be on the heading that carries it."
 Each segment is a plist `:from :to :marker :title', clamped to the window
 asked for, so attribution never reaches outside the days requested.
 
-Only the running clock is closed at NOW.  A CLOCK line with no end that
+Only the running clock is closed at NOW (a second past it, so the second
+you are in is inside the spell).  A CLOCK line with no end that
 is *not* running is a clock somebody forgot to close, and reading it as
 work still going on hands every file of today to a heading last touched
 in June.  Filling such a line in is org-foresight's C; guessing at it
@@ -121,7 +122,18 @@ redrawn."
              (save-excursion
                (org-back-to-heading t)
                (let* ((e (cond (e-str (org-time-string-to-time e-str))
-                               ((org-upwell--running-clock-p s) now)))
+                               ;; A second past now, for a clock that has
+                               ;; not stopped.  A sample is matched against
+                               ;; [from, to) so that one at a clock-out
+                               ;; instant belongs to the next spell and not
+                               ;; to both -- but a running clock has no next
+                               ;; spell, and ending it exactly at now made
+                               ;; the second you are in unattributable.  The
+                               ;; timer lost one second in sixty; a redraw
+                               ;; pressed the moment after walking into a
+                               ;; directory lost the directory.
+                               ((org-upwell--running-clock-p s)
+                                (time-add now 1))))
                       (s* (and e (if (time-less-p s from) from s)))
                       (e* (and e (if (time-less-p today1 e) today1 e))))
                  (when (and e (time-less-p s* e*))

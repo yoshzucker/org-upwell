@@ -125,7 +125,7 @@ there are any, the line point is on when there are none.
 | ~R~ | Move it to another heading |
 | ~+~ / ~L~ | Add a file / a URL to this heading |
 | ~o~ | Visit ~upwell.org~ at this item |
-| ~r~ / ~g~ | Read the store again. Wanted while the clock runs: the sync keeps attributing things behind the bench's back |
+| ~r~ / ~g~ | Take in whatever has been sighted since last time, then draw the listing again. Wanted while the clock runs: a sighting is not a claim, and the timer that makes one is a minute wide |
 | ~q~ | Dismiss the strip |
 
 The foot of the bench names all of these, with the key each one is on /in

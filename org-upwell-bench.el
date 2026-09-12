@@ -1032,21 +1032,39 @@ Marks go: what they pointed at may not be there any more."
     (forward-line (1- line))))
 
 (defun org-upwell-bench-redraw ()
-  "Read the store again and draw this bench.
+  "Take in whatever has been sighted since last time, and draw this bench.
 
 Wanted most while the clock is running.  The watcher keeps sighting
-things and `org-upwell-sync\=' keeps attributing them to the heading
-being clocked, so a bench left open goes quietly out of date -- and
-tidying a heading while its clock runs, then clocking out, is the
-ordinary way round.  This is the key that makes the list agree with
-the store again.
+things, and Emacs keeps sighting what it is looking at, and a bench left
+open goes quietly out of date -- tidying a heading while its clock runs,
+then clocking out, is the ordinary way round.
+
+The sighting comes first.  A sighting is not a claim: `org-upwell-sync\='
+is what intersects the two, and it runs on an idle timer every
+`org-upwell-sync-interval\=' seconds.  Reading the store without it would
+show what the last timer happened to catch, so the directory you walked
+into a moment ago would not be there and the key would look broken.  It
+costs a few milliseconds when there is nothing new, which is the usual
+case; when there is something new, taking it in is the whole point.
 
 The heading is this bench\='s own, not whatever point happens to be on
 elsewhere, so redrawing never switches the list underneath you."
   (interactive)
   (unless (derived-mode-p 'org-upwell-bench-mode)
     (user-error "Not the bench"))
-  (org-upwell--bench-redraw))
+  (let* ((before (length (plist-get org-upwell-bench-domain :items)))
+         (failed (condition-case err
+                     (progn (org-upwell-sync 1) nil)
+                   ;; The listing is still worth redrawing when the sighting
+                   ;; half is broken -- a watcher that never installed should
+                   ;; not take the key away.
+                   (error (error-message-string err)))))
+    (org-upwell--bench-redraw)
+    (let ((n (- (length (plist-get org-upwell-bench-domain :items)) before)))
+      (cond
+       (failed (message "org-upwell: redrawn; could not take in sightings: %s"
+                        failed))
+       ((> n 0) (message "org-upwell: %d new" n))))))
 
 (defun org-upwell-bench-keep ()
   "Keep the marked items, or this one, on this heading.
