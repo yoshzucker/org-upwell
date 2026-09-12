@@ -691,14 +691,18 @@ bench as a heading change, so each q split the root once more."
          (should (get-buffer-window "*org-upwell*" nil))
          (should (= n (1+ after-quit))))))))
 
-(ert-deftest org-upwell-test-demo-quotes-heading-has-the-three-files ()
-  "Compare the three quotes is why expand in the demo has something to show."
+(ert-deftest org-upwell-test-demo-quotes-heading-shows-every-column ()
+  "The demo is what somebody checks the bench against, so it has to have
+one of everything the bench can say: both sections, and a form column
+with more than one answer in it."
   (org-upwell-test--with-dir
    (let ((org-upwell-demo-directory (expand-file-name "demo" dir)))
      (org-upwell-demo-regenerate)
      (let ((org-upwell-directory org-upwell-demo-directory)
            (file (expand-file-name "projects.org" org-upwell-demo-directory)))
-       (should (equal '("brief.txt" "quote-acme.csv" "quote-beta.txt")
+       (should (equal '("Vendor day deck" "Vendor list" "brief.txt"
+                        "files" "kickoff.pptx" "quote-acme.csv"
+                        "quote-beta.txt" "shared")
                       (sort (mapcar (lambda (m) (plist-get m :name))
                                     (plist-get (org-upwell-domain
                                                 (org-upwell-test--marker-at-id
@@ -2016,6 +2020,221 @@ itself is part of catching the hour, not an extra."
           (should-not org-upwell-sight-mode)
           (should-not (memq #'org-upwell-sight--update post-command-hook)))
       (org-upwell-mode (if was 1 -1)))))
+
+;;;; What a row says it is
+
+(ert-deftest org-upwell-test-the-form-column-says-what-it-can ()
+  "The extension when it is known, because that is the most anybody can
+say in six columns.  A word for the kind only when there is no extension
+to read: a SharePoint short link says which application opens it and
+nothing else, and an .aspx is a page whatever it is called."
+  (dolist (case '(("pptx"   :path "/a/b/deck.pptx")
+                  ("xlsx"   :path "/a/b/quote.XLSX")
+                  ("file"   :path "/a/b/notes")
+                  ("dir"    :path "/a/b/papers" :kind "dir")
+                  ("slides" :url "https://c.sharepoint.com/:p:/r/s/Doc.aspx?d=x")
+                  ("sheet"  :url "https://c.sharepoint.com/:x:/r/s/Doc.aspx?d=x")
+                  ("pptx"   :url "https://c.sharepoint.com/s/_layouts/15/Doc.aspx?d=x&file=deck.pptx")
+                  ("page"   :url "https://c.sharepoint.com/sites/s/SitePages/plan.aspx")
+                  ("pdf"    :url "https://example.com/vendor/manual.pdf")
+                  ("page"   :url "https://example.com/news")))
+    (should (equal (car case) (org-upwell-form (cdr case))))))
+
+(ert-deftest org-upwell-test-the-protocol-and-the-column-read-one-table ()
+  "Two tables of what a URL opens in would disagree the first time one of
+them was added to."
+  (should (equal "excel" (org-upwell-office-app "https://c/:x:/r/s/x")))
+  (should (string-prefix-p "ms-excel:ofe|u|"
+                           (org-upwell-mint-office "https://c/:x:/r/s/x")))
+  (should-not (org-upwell-office-app "https://example.com/news"))
+  (should-not (org-upwell-mint-office "https://example.com/news")))
+
+(ert-deftest org-upwell-test-directories-are-listed-above-files ()
+  "Sorted in among the files, the place the work is kept moves every time a
+file is added.  Above them it is always in the same place."
+  (org-upwell-test--with-dir
+    (let* ((sub (expand-file-name "acme" dir))
+           (sheet (expand-file-name "quote.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory sub t)
+      (write-region "x" nil sheet)
+      (dolist (p (list sheet sub))
+        (org-upwell-claim (org-upwell-save (list :path p)) "T1" 'confirmed))
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (let ((text (substring-no-properties (buffer-string))))
+          (should (< (string-search "Directories" text)
+                     (string-search "Files" text)))
+          (should (< (string-search "acme" text)
+                     (string-search "quote.xlsx" text))))))))
+
+(ert-deftest org-upwell-test-an-empty-section-still-says-so ()
+  "A heading with nothing under it is what says the question has not been
+answered yet -- there is a key for answering it."
+  (org-upwell-test--with-dir
+    (let* ((sheet (expand-file-name "quote.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (write-region "x" nil sheet)
+      (org-upwell-claim (org-upwell-save (list :path sheet)) "T1" 'confirmed)
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (let ((text (substring-no-properties (buffer-string))))
+          (should (string-match-p "Directories\n  (none)" text))
+          (should (string-search "quote.xlsx" text)))))))
+
+(ert-deftest org-upwell-test-both-sections-share-one-set-of-columns ()
+  "One width for both, computed over every item, or the columns step at the
+break."
+  (org-upwell-test--with-dir
+    (let* ((sub (expand-file-name "a" dir))
+           (sheet (expand-file-name "a-very-long-file-name-indeed.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory sub t)
+      (write-region "x" nil sheet)
+      (dolist (p (list sheet sub))
+        (org-upwell-claim (org-upwell-save (list :path p :provenance "pin"))
+                          "T1" 'confirmed))
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (let (columns)
+          (while (not (eobp))
+            (when (org-upwell--bench-item-at-point)
+              (beginning-of-line)
+              ;; where the provenance column starts
+              (when (re-search-forward "  \\(pin\\|trace\\)" (line-end-position) t)
+                (push (- (match-beginning 0) (line-beginning-position))
+                      columns)))
+            (forward-line 1))
+          (should (= 2 (length columns)))
+          (should (= (car columns) (cadr columns))))))))
+
+(ert-deftest org-upwell-test-marking-steps-over-a-section-heading ()
+  "Marking moves down, the way dired does.  The line below the last
+directory is a heading, and stopping there would leave the next `m\=' with
+nothing to mark."
+  (org-upwell-test--with-dir
+    (let* ((sub (expand-file-name "acme" dir))
+           (sheet (expand-file-name "quote.xlsx" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory sub t)
+      (write-region "x" nil sheet)
+      (dolist (p (list sheet sub))
+        (org-upwell-claim (org-upwell-save (list :path p)) "T1" 'confirmed))
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "acme" nil t))
+        (beginning-of-line)
+        (org-upwell-bench-toggle-mark)
+        ;; the only row below it is in the other section
+        (should (org-upwell--bench-item-at-point))
+        (should (equal "quote.xlsx"
+                       (plist-get (org-upwell--bench-item-at-point) :name)))))))
+
+(ert-deftest org-upwell-test-a-local-copy-is-marked-and-put-under-it ()
+  "Opening a document on SharePoint and downloading it leaves two things,
+and they stay two things.  What is worth saying is that they are the same
+document."
+  (org-upwell-test--with-dir
+    (let* ((local (expand-file-name "vendor comparison.pdf" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n* NEXT Other\n:PROPERTIES:\n:ID: T2\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (write-region "x" nil local)
+      (org-upwell-claim (org-upwell-save
+                         (list :url "https://example.com/x/vendor comparison.pdf"
+                               :name "vendor comparison"))
+                        "T1" 'confirmed)
+      (org-upwell-claim (org-upwell-save (list :path local)) "T1" 'confirmed)
+      ;; a second local file of the same name is not the original of anything:
+      ;; two downloads of one document are two copies, not a copy of a copy
+      (let ((other (expand-file-name "old/vendor comparison.pdf" dir)))
+        (make-directory (file-name-directory other) t)
+        (write-region "x" nil other)
+        (org-upwell-claim (org-upwell-save (list :path other)) "T1" 'confirmed))
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (let* ((text (substring-no-properties (buffer-string)))
+               (lines (split-string text "\n")))
+          (should (seq-find (lambda (l) (and (string-search "vendor comparison.pdf" l)
+                                             (string-suffix-p "copy" l)))
+                            lines))
+          ;; the URL is the original and is not marked; both local files are
+          ;; copies of it, and sit under it
+          (let ((orig (seq-position lines nil
+                                    (lambda (l _)
+                                      (string-match-p "pdf +vendor comparison  " l)))))
+            (should orig)
+            (should-not (string-suffix-p "copy" (nth orig lines)))
+            (should (string-suffix-p "copy" (nth (+ 1 orig) lines)))
+            (should (string-suffix-p "copy" (nth (+ 2 orig) lines)))))))))
+
+(ert-deftest org-upwell-test-two-downloads-are-not-copies-of-each-other ()
+  "A copy is a copy of something that is not on this machine.  Two
+downloads of one document are two copies; neither is the original, and a
+listing that made one of them the original of the other would put a row
+under a row that is no more the document than it is."
+  ;; named the way `org-upwell-save' names them, or the comparison has
+  ;; nothing to compare and the test passes for the wrong reason
+  (let* ((url (list :url "https://x/vendor" :name "vendor"))
+         (a (list :path "/a/vendor.pdf" :name "vendor.pdf"))
+         (b (list :path "/b/vendor.pdf" :name "vendor.pdf")))
+    ;; with nothing but local files, nothing is a copy
+    (should-not (org-upwell--copy-of a (list a b)))
+    (should-not (org-upwell--copy-of b (list a b)))
+    ;; the URL is never a copy, whatever else is there
+    (should-not (org-upwell--copy-of url (list url a b)))
+    ;; and both local ones are copies of it
+    (should (eq url (org-upwell--copy-of a (list url a b))))
+    (should (eq url (org-upwell--copy-of b (list url a b))))))
+
+(ert-deftest org-upwell-test-tidy-offers-only-what-many-names-share ()
+  "Two names sharing an opening is a coincidence; a dozen sharing one is the
+site putting its own name on every page it serves."
+  (let ((org-upwell-tidy-threshold 3))
+    (let ((found (org-upwell--tidy-affixes
+                  '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                    "社内ポータル - 経費"
+                    "PowerPoint - 提案書" "PowerPoint - 議事録"
+                    "見積比較"))))
+      (should (equal '("社内ポータル - ") (mapcar #'car found)))
+      (should (eq 'head (cadr (car found))))
+      (should (= 3 (cddr (car found)))))
+    ;; and the same at the other end
+    (let ((found (org-upwell--tidy-affixes
+                  '("規定集 - 社内ポータル" "出張申請 - 社内ポータル"
+                    "経費 - 社内ポータル" "見積比較"))))
+      (should (equal '(" - 社内ポータル") (mapcar #'car found)))
+      (should (eq 'tail (cadr (car found)))))))
+
+(ert-deftest org-upwell-test-tidy-strips-only-what-was-chosen ()
+  "Offered rather than stripped: losing real words is worse than keeping a
+few noisy ones."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3))
+      (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                      "社内ポータル - 経費" "見積比較 - 社内用"))
+        (org-upwell-save (list :name name :url (concat "https://x/" name))))
+      (cl-letf (((symbol-function 'completing-read-multiple)
+                 (lambda (&rest _) (list "start    3  社内ポータル - "))))
+        (org-upwell-tidy-names))
+      (let ((names (sort (mapcar (lambda (m) (plist-get m :name))
+                                 (org-upwell-items))
+                         #'string<)))
+        (should (member "規定集" names))
+        (should (member "出張申請" names))
+        (should (member "経費" names))
+        ;; not chosen, not touched
+        (should (member "見積比較 - 社内用" names))))))
 
 (provide 'org-upwell-test)
 

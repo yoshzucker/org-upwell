@@ -104,6 +104,7 @@ including ~expand=~ in the org-protocol URL.
 | ~org-upwell-create~ | New xlsx/pptx/…, claimed, no save-location prompt |
 | ~org-upwell-open-named~ | Completing-read over the store |
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
+| ~org-upwell-tidy-names~ | Offer the runs of text many stored names share, and strip the chosen ones |
 | (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
 | ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
@@ -115,7 +116,8 @@ there are any, the line point is on when there are none.
 |---|---|
 | ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones, with the OS |
 | ~e~ | Visit inside Emacs, in another window |
-| ~f~ | Open the directory the file is in, with the file selected |
+| ~^~ | Go to the place this row lives in: the directory, with the file selected |
+| ~P~ | Keep that place, as an item of its own |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |
 | ~d~ | Take it off this heading, and have that stay said |
@@ -134,11 +136,11 @@ says only that there is no item there:
 
 #+begin_example
 on this line, or the marked ones
-    RET  open it            c    keep it here
-    e    open in Emacs      d    drop from here
-    f    its directory      R    move elsewhere
+    RET  open it            u    unmark, move up
+    e    open in Emacs      c    keep it here
+    ^    go to its place    d    drop from here
+    P    keep its place     R    move elsewhere
     m    mark, move down    D    forget entirely
-    u    unmark, move up
 on the bench
     a    open every one     +    add a file
     x    open the marked    L    add a URL
@@ -164,6 +166,19 @@ The echo area says the line at point in full: the name and where it actually
 is, which are the two things the columns had to shorten.
 ~org-upwell-bench-eldoc~ turns it off.
 
+A row says three things about the thing it names, and it takes all three
+to trust it: what it is *called*, *where* it lives, and what *form* it is.
+The form is the extension when that can be read -- ~pptx~, ~xlsx~, ~pdf~ --
+and a word for the kind when it cannot: a SharePoint short link says which
+application opens it and nothing else, so it reads ~slides~, ~sheet~ or
+~doc~. A page is ~page~ whatever its extension; an ~.aspx~ in that column
+would answer a question nobody asked. A directory is ~dir~.
+
+Opening a document on SharePoint and then downloading it leaves two
+things, and they stay two: one is a link somebody else can open and the
+other is a file on this machine. The bench puts the download under the
+original and marks it ~copy~, which is guessed from the names agreeing.
+
 Names that came from a browser are trimmed before they are stored. A browser
 writes its own name on every window it owns, and where the watcher can read
 nothing finer than the window — Windows, which has no scripting bridge to ask
@@ -172,6 +187,13 @@ same on every row. ~org-upwell-title-noise~ is the list; it takes one segment
 off the end, because nothing tells a profile somebody named apart from the
 last part of a title and a rule that took two would eat real subjects. Edge's
 default =Profile N= is listed by name.
+
+~M-x org-upwell-tidy-names~ finds the rest. A site that prefixes every page
+with its own name is not guessable -- it is whatever the intranet in front
+of you calls itself -- so the store is asked instead: runs of text that
+~org-upwell-tidy-threshold~ names or more share, at either end, offered with
+their counts. Offered, not stripped: losing real words is worse than keeping
+a few noisy ones.
 
 With ~org-upwell-agenda-follow~ on, moving in the agenda redraws the bench
 for the row. Org's own follow (~F~) opens the entry's file in another
@@ -197,6 +219,7 @@ Two clocks, not one.
 | What | When | Who |
 |---|---|---|
 | A *trace* (path/URL + unix time) | every 15s, only if the front document changed -- for a browser, only when the window title says the tab or the page did; also new files in the download directory | the watcher, Emacs need not be running |
+| The same, for what Emacs is looking at | when the buffer changes: a dired listing's directory, and a file under ~org-upwell-search-roots~ | Emacs itself (~org-upwell-sight-mode~) |
 | A *provisional claim* | Emacs intersects traces with CLOCK intervals: a 60s timer while Emacs is up, immediately on clock-out, immediately after a clock is filled in from the agenda | Emacs |
 | A *confirmed claim* | ~c~ on the bench, which clock-out opens for the heading it just closed. An explicit pin or drop is confirmed at once | you |
 | A *rejection* | ~d~ or ~r~ on the bench. Written down, because the intersection runs again a minute later and would otherwise propose the same file | you |
@@ -208,10 +231,23 @@ listing marks them as provisional until ~c~ keeps them.
 ~org-upwell-review-on-clock-out~ can go back to the older single-line
 question, or say nothing at all.
 
-A directory somebody had open is recorded as a trace and does not become
-an item: the bench lists things to open, and the directory a file was found
-in is already on the file's line -- ~f~ goes there. A directory pinned or
-dropped on purpose is kept, like any other pin.
+A directory somebody had open is kept, like anything else. It was dropped
+once, on the reasoning that the bench lists things to /open/ and the
+directory a file came from is already on the file's line. That reasoning
+holds only for somebody whose file manager is watched from outside; where
+the work is kept is a thing to go to, and ~^~ goes there. Directories are
+listed above the files, because sorted in among them the place moves every
+time a file is added, and it is the one row you go to over and over.
+
+Emacs is the other blind spot the same change closes. The watcher's
+branches are the applications work arrives in -- a browser, Excel,
+PowerPoint, Word, the file manager -- and Emacs is in none of them, so
+while Emacs was in front nothing was recorded at all. ~org-upwell-sight-mode~
+writes what Emacs is looking at into the same log: a dired listing's
+directory, and a file under ~org-upwell-search-roots~. That setting already
+meant "the trees my work lives in"; outside them is a configuration file, a
+library, or this package's own store, and none of those is work.
+~org-upwell-sight-dired~ and ~org-upwell-sight-files~ turn each half off.
 
 The watcher does not know Org. If Emacs is closed, traces pile up and wait.
 Nothing is guessed when there is no clock: that file becomes an unclaimed
@@ -231,9 +267,11 @@ just is not offered for that heading a second time.
 ~.emacs.d~ is for files Emacs writes. The watcher starts at login, often
 before Emacs, and must not depend on it.
 
-Where a moved file is looked for again is ~org-upwell-search-roots~, and
-where ~org-upwell-create~ puts a new one is ~org-upwell-create-directory~
--- or the ~:UPWELL_DIR:~ property on the heading, when it has one.
+~org-upwell-search-roots~ answers two questions, and they are the same
+question: where a moved file is looked for again, and which of the files
+Emacs opens are work. Where ~org-upwell-create~ puts a new one is
+~org-upwell-create-directory~ -- or the ~:UPWELL_DIR:~ property on the
+heading, when it has one.
 
 * What this is not
 

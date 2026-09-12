@@ -154,6 +154,63 @@ the watcher may also send its own id, which is stored as given."
 
 ;;;; Office protocol
 
+(defconst org-upwell-office-markers
+  '(("/:x:/" . "excel") ("/:p:/" . "powerpoint") ("/:w:/" . "word"))
+  "SharePoint short-link markers, and the application each one means.
+
+All they say is which application opens it.  The file may be an xlsx or
+an xls and the link does not tell you which, which is why the form column
+falls back to a word for the kind of thing rather than inventing an
+extension it has not seen.")
+
+(defconst org-upwell-office-extensions
+  '(("xlsx" . "excel") ("xlsm" . "excel") ("xls" . "excel")
+    ("pptx" . "powerpoint") ("pptm" . "powerpoint") ("ppt" . "powerpoint")
+    ("docx" . "word") ("docm" . "word") ("doc" . "word"))
+  "Extensions that open in an Office application.
+
+Read twice: to mint the protocol that opens a URL in the application, and
+to say what a thing is on the bench.  One table, because two would
+disagree the first time one of them was added to.")
+
+(defconst org-upwell-page-extensions
+  '("aspx" "asp" "html" "htm" "php" "jsp" "cgi" "do")
+  "Extensions that are a page rather than a document.
+
+A SharePoint site page is an .aspx, and putting \"aspx\" in the form
+column would answer the question with a fact nobody asked about -- what
+it is, is a page.")
+
+(defun org-upwell-url-extension (url)
+  "Return the file extension URL names, lowercased, or nil.
+
+Two places carry it: the last part of the path, and SharePoint\='s
+`file=\=' parameter, which is where the name lives when the path is a
+`Doc.aspx\=' with an id in it.  Anything longer than five characters is
+not an extension, whatever it is sitting after a dot."
+  (when (and url (stringp url))
+    (let* ((named (and (string-match "[?&]file=\\([^&#]+\\)" url)
+                       (match-string 1 url)))
+           (bare (replace-regexp-in-string "[?#].*\\'" "" url))
+           (last (file-name-nondirectory (directory-file-name bare)))
+           (ext (or (and named (file-name-extension named))
+                    (file-name-extension last))))
+      (when (and ext (string-match-p "\\`[A-Za-z0-9]\\{1,5\\}\\'" ext))
+        (downcase ext)))))
+
+(defun org-upwell-office-app (url)
+  "Return \"excel\", \"powerpoint\" or \"word\" for URL, or nil."
+  (when (and url (stringp url))
+    (or (cdr (seq-find (lambda (m) (string-match-p (regexp-quote (car m)) url))
+                       org-upwell-office-markers))
+        (cdr (assoc (org-upwell-url-extension url)
+                    org-upwell-office-extensions))
+        (cond
+         ((string-match-p "onedrive\\.live\\.com.*excel" url) "excel")
+         ((string-match-p "office\\.com/launch/excel" url) "excel")
+         ((string-match-p "office\\.com/launch/powerpoint" url) "powerpoint")
+         ((string-match-p "office\\.com/launch/word" url) "word")))))
+
 (defun org-upwell-mint-office (url)
   "Return an `ms-*:ofe|u|' protocol for URL, or nil if it is not Office.
 
@@ -166,24 +223,44 @@ this package is here to stop repeating."
        ((string-match-p "\\`ms-\\(excel\\|powerpoint\\|word\\):" url) url)
        ((not (string-match-p "\\`https?://" url)) nil)
        (t
-        (let ((app
-               (cond
-                ((string-match-p "/:x:/" url) "excel")
-                ((string-match-p "/:p:/" url) "powerpoint")
-                ((string-match-p "/:w:/" url) "word")
-                ((string-match-p "\\.xlsx\\(\\|[?#]\\)" url) "excel")
-                ((string-match-p "\\.xlsm\\(\\|[?#]\\)" url) "excel")
-                ((string-match-p "\\.xls\\(\\|[?#]\\)" url) "excel")
-                ((string-match-p "\\.pptx\\(\\|[?#]\\)" url) "powerpoint")
-                ((string-match-p "\\.ppt\\(\\|[?#]\\)" url) "powerpoint")
-                ((string-match-p "\\.docx\\(\\|[?#]\\)" url) "word")
-                ((string-match-p "\\.doc\\(\\|[?#]\\)" url) "word")
-                ((string-match-p "onedrive\\.live\\.com.*excel" url) "excel")
-                ((string-match-p "office\\.com/launch/excel" url) "excel")
-                ((string-match-p "office\\.com/launch/powerpoint" url) "powerpoint")
-                ((string-match-p "office\\.com/launch/word" url) "word"))))
-          (when app
-            (concat "ms-" app ":ofe|u|" url))))))))
+        (when-let ((app (org-upwell-office-app url)))
+          (concat "ms-" app ":ofe|u|" url)))))))
+
+(defconst org-upwell-office-forms
+  '(("excel" . "sheet") ("powerpoint" . "slides") ("word" . "doc"))
+  "What to call a thing when all that is known is which application opens it.
+
+A word for the kind of thing, rather than a guessed extension: a
+`/:p:/\=' link may be a pptx or a ppt and says neither, and a column that
+answered \"pptx\" would be stating something it had not seen.")
+
+(defun org-upwell-form (item)
+  "Return a short word for what ITEM is: an extension, or a kind.
+
+The third of the three things that make a row worth trusting -- the name
+says what it is called, the where says where it lives, and this says what
+kind of thing it is.  Between them a row identifies something well enough
+to open it, or to decide not to.
+
+The extension when it is known, because that is the most anybody can say
+in six columns.  A word for the kind only when the extension is not
+there to be read: a SharePoint short link says which application opens it
+and nothing else.  A page is a page whatever it is called -- an .aspx in
+this column would answer a question nobody asked."
+  (let ((path (plist-get item :path))
+        (url (or (plist-get item :url) (plist-get item :office))))
+    (cond
+     ((org-upwell-directory-item-p item) "dir")
+     (path (or (and (file-name-extension path)
+                    (downcase (file-name-extension path)))
+               "file"))
+     (url
+      (let ((ext (org-upwell-url-extension url)))
+        (cond
+         ((and ext (not (member ext org-upwell-page-extensions))) ext)
+         ((cdr (assoc (org-upwell-office-app url) org-upwell-office-forms)))
+         (t "page"))))
+     (t ""))))
 
 (defcustom org-upwell-search-roots '("~/Downloads/")
   "The trees this person's work files live in.

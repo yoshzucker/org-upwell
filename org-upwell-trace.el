@@ -217,7 +217,12 @@ Windows, where there is no scripting bridge to ask the tab -- that suffix
 arrives on every URL alike.  It is the same handful of characters on every
 row, and it is the part a narrow column has least reason to keep.
 
-Anchored at the end, so a page actually about a browser keeps its subject.
+Anchored where it has to be.  The ones shipped here are anchored at the
+end, because that is where a browser puts its own name; a pattern
+anchored at the beginning works the same way, and is what a site that
+prefixes every title with its own name needs.  `org-upwell-tidy-names\='
+finds those, since they are not guessable -- they are whatever the
+intranet in front of you calls itself.
 
 One segment only.  Edge writes the profile between the page and its own name,
 and it is tempting to take both -- but nothing tells a profile apart from the

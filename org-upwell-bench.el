@@ -621,13 +621,7 @@ is `org-upwell-bench\=', which does the choosing and then calls this."
            'follow-link t
            'help-echo (org-upwell-file)
            'action (lambda (_) (org-upwell-visit-store)))
-          (insert "\nFiles\n")
-          (if (null (plist-get domain :items))
-              (insert (propertize "  (none)\n" 'face 'shadow))
-            (let ((widths (org-upwell--bench-widths
-                           (plist-get domain :items) buf)))
-              (dolist (m (plist-get domain :items))
-                (org-upwell--bench-insert-item m domain widths))))
+          (org-upwell--bench-insert-sections domain buf)
           (insert "\n" (org-upwell--bench-legend
                          (let ((win (get-buffer-window buf nil)))
                            (if (window-live-p win) (window-body-width win)
@@ -712,7 +706,11 @@ in the same handful of characters."
 The name column is as wide as the longest name, within reason.  The
 directory column is as wide as the longest one, up to what the window has left
 after the columns that follow it -- so a wide frame does not put a hand's
-width of blank between two short columns."
+width of blank between two short columns.
+
+The 45 is what the fixed columns reserve: two for the marks, six for the
+form and eight of gaps, six for the provenance, five for how long ago,
+and the rest is slack for the two flags a row may carry."
   (let* ((win (get-buffer-window buf nil))
          (total (if (window-live-p win) (window-body-width win) (frame-width)))
          (name (min 40 (max 20 (apply #'max 0
@@ -724,7 +722,69 @@ width of blank between two short columns."
                        (mapcar (lambda (m)
                                  (string-width (org-upwell--item-where m)))
                                items))))
-    (cons name (max 12 (min asked (- total name 37))))))
+    (cons name (max 12 (min asked (- total name 45))))))
+
+(defun org-upwell--copy-of (item items)
+  "Return the item among ITEMS that ITEM is a local copy of, or nil.
+
+Opening a document on SharePoint and then downloading it leaves two
+things, and they stay two things: one is a URL somebody else can open and
+the other is a file on this machine, and a bench that folded them into
+one would lose whichever you needed.  What is worth saying is that they
+are the same document, which is a matter of the names agreeing.
+
+Guessed from the name, so two unrelated things called the same thing will
+be called a copy of each other.  It marks a row; it changes nothing."
+  (let ((base (and (plist-get item :path)
+                   (not (org-upwell-directory-item-p item))
+                   (downcase (file-name-base (plist-get item :path))))))
+    (and base
+         (seq-find
+          (lambda (other)
+            (and (not (eq other item))
+                 (plist-get other :url)
+                 (not (plist-get other :path))
+                 (equal base (downcase (file-name-base
+                                        (or (plist-get other :name) ""))))))
+          items))))
+
+(defun org-upwell--bench-order (items)
+  "ITEMS with each local copy moved to just under what it is a copy of."
+  (let ((originals (seq-remove (lambda (m) (org-upwell--copy-of m items))
+                               items))
+        out)
+    (dolist (m originals (nreverse out))
+      (push m out)
+      (dolist (c (seq-filter (lambda (other)
+                               (eq m (org-upwell--copy-of other items)))
+                             items))
+        (push c out)))))
+
+(defun org-upwell--bench-insert-sections (domain buf)
+  "Insert DOMAIN\='s items into BUF, directories first.
+
+Two sections rather than one list.  Sorted in among the files, the place
+the work is kept moves every time a file is added or renamed, and it is
+the one row somebody goes to over and over.  Above them it is always in
+the same place.
+
+Both headings are drawn even when a section is empty: a heading with
+nothing under it is what says the question has not been answered yet.
+
+One width for both, computed over every item, so the columns line up
+across the break."
+  (let* ((items (plist-get domain :items))
+         (widths (org-upwell--bench-widths items buf)))
+    (pcase-dolist (`(,heading . ,wanted)
+                   `(("Directories" . ,#'org-upwell-directory-item-p)
+                     ("Files" . ,(lambda (m)
+                                   (not (org-upwell-directory-item-p m))))))
+      (insert "\n" (propertize heading 'face 'org-level-2) "\n")
+      (let ((these (seq-filter wanted items)))
+        (if (null these)
+            (insert (propertize "  (none)\n" 'face 'shadow))
+          (dolist (m (org-upwell--bench-order these))
+            (org-upwell--bench-insert-item m domain widths)))))))
 
 (defun org-upwell--bench-insert-item (m domain widths)
   "Insert one item line for M under DOMAIN, in the columns WIDTHS."
@@ -744,6 +804,10 @@ width of blank between two short columns."
          (shown (truncate-string-to-width name name-w nil nil t))
          (start (point)))
     (insert (if marked "* " "  "))
+    (insert (propertize (org-upwell--pad (org-upwell-form m) 6)
+                        'face 'shadow
+                        'help-echo "what kind of thing this is")
+            "  ")
     (insert-text-button
      shown
      'follow-link t
@@ -771,6 +835,11 @@ width of blank between two short columns."
          "")
        (if (plist-get m :stale)
            (propertize "  stale" 'face 'warning)
+         "")
+       (if (org-upwell--copy-of m (plist-get domain :items))
+           (propertize "  copy"
+                       'face 'shadow
+                       'help-echo "the same document as the row above")
          ""))))
     (insert "\n")
     (put-text-property start (1- (point)) 'org-upwell m)))
@@ -861,6 +930,24 @@ starting at once."
             (error (message "org-upwell: %s" (error-message-string err))))))
       (message "org-upwell: opened %d marked file%s" n (if (= n 1) "" "s")))))
 
+(defun org-upwell--bench-goto-line-after (line)
+  "Go to the line below LINE, or to the next item below that.
+
+Marking moves down, the way dired does, so the hand can mark a run of
+them without also moving.  With the listing in two sections the line
+below the last directory is a heading, and stopping there would leave
+the next `m\=' with nothing to mark."
+  (goto-char (point-min))
+  (forward-line line)
+  (while (and (not (eobp))
+              (not (org-upwell--bench-item-at-point)))
+    (forward-line 1))
+  (when (eobp)
+    ;; Off the end: the last item is a better place to be than the foot.
+    (while (and (not (bobp))
+                (not (org-upwell--bench-item-at-point)))
+      (forward-line -1))))
+
 (defun org-upwell-bench-toggle-mark ()
   "Mark or unmark the item on this line, then move to the next."
   (interactive)
@@ -874,8 +961,7 @@ starting at once."
               (delete id org-upwell-bench-marked)
             (cons id org-upwell-bench-marked)))
     (org-upwell--bench-draw org-upwell-bench-domain)
-    (goto-char (point-min))
-    (forward-line line)))
+    (org-upwell--bench-goto-line-after line)))
 
 (defun org-upwell-bench-unmark ()
   "Unmark the item on this line, then move to the next."
@@ -887,8 +973,7 @@ starting at once."
       (setq org-upwell-bench-marked
             (delete id org-upwell-bench-marked))
       (org-upwell--bench-draw org-upwell-bench-domain)
-      (goto-char (point-min))
-      (forward-line line))))
+      (org-upwell--bench-goto-line-after line))))
 
 (defun org-upwell-bench-mark-toggle-all ()
   "Mark all items, or unmark all if every item is already marked."
@@ -1017,6 +1102,131 @@ recording at all.  The file on disk is not touched."
     (org-upwell--reassign-loop items id)
     (org-upwell--bench-redraw)))
 
+(defcustom org-upwell-tidy-threshold 3
+  "How many names must share a run of text before it is offered as noise.
+
+Two names sharing an opening is a coincidence; a dozen sharing one is the
+site putting its own name on every page it serves.  Low enough to catch
+the second, high enough not to offer the first."
+  :type 'integer
+  :group 'org-upwell)
+
+(defconst org-upwell-tidy-separators '(" - " " | " " :: " ": " "\u3000" " \u2014 ")
+  "Where a run of text may end, when looking for one names share.
+
+Cut at a separator rather than anywhere: the longest run two names share
+is usually half a word, and stripping half a word leaves a name nobody
+can read.")
+
+(defun org-upwell--tidy-affixes (names)
+  "Return ((AFFIX END . COUNT) ...) for runs NAMES share, most first.
+
+END is `head\=' or `tail\='.  Counted over distinct names, so one document
+sighted a hundred times does not look like a hundred documents agreeing."
+  (let ((seen (make-hash-table :test 'equal))
+        out)
+    (dolist (name (seq-uniq names))
+      (dolist (sep org-upwell-tidy-separators)
+        (let ((at (string-search sep name)))
+          (when (and at (> at 0))
+            (cl-incf (gethash (cons (substring name 0 (+ at (length sep))) 'head)
+                              seen 0))))
+        (let ((at (and (string-match-p (regexp-quote sep) name)
+                       (string-match (concat (regexp-quote sep) "[^"
+                                             (substring sep 0 1) "]*\\'")
+                                     name))))
+          (when at
+            (cl-incf (gethash (cons (substring name at) 'tail) seen 0))))))
+    (maphash (lambda (k n)
+               (when (>= n org-upwell-tidy-threshold)
+                 (push (cons (car k) (cons (cdr k) n)) out)))
+             seen)
+    (sort out (lambda (a b) (> (cddr a) (cddr b))))))
+
+;;;###autoload
+(defun org-upwell-tidy-names ()
+  "Offer the runs of text many stored names share, and strip the chosen ones.
+
+A window title carries whatever the thing that served it calls itself,
+and the same words then sit at the front or the back of every row on the
+bench.  `org-upwell-title-noise\=' takes the ones a browser writes, which
+are guessable; this finds the ones only your own store knows -- the
+intranet\='s name, the viewer that prefixes every PDF it opens.
+
+Offered rather than stripped.  Losing real words is worse than keeping a
+few noisy ones, which is the same reason `org-upwell-title-noise\=' takes
+one segment and not two: nothing tells a subject from a suffix except
+somebody reading it."
+  (interactive)
+  (org-upwell-with-store
+   (let* ((items (org-upwell-items))
+          (found (org-upwell--tidy-affixes
+                  (delq nil (mapcar (lambda (m) (plist-get m :name)) items)))))
+     (unless found
+       (user-error "org-upwell: nothing is shared by %d names or more"
+                   org-upwell-tidy-threshold))
+     (let* ((labels (mapcar (lambda (f)
+                              (format "%-6s %3d  %s"
+                                      (if (eq (cadr f) 'head) "start" "end")
+                                      (cddr f) (car f)))
+                            found))
+            (chosen (completing-read-multiple
+                     "Strip (comma-separated, TAB to see them): " labels nil t))
+            (picked (seq-filter (lambda (f)
+                                  (member (format "%-6s %3d  %s"
+                                                  (if (eq (cadr f) 'head)
+                                                      "start" "end")
+                                                  (cddr f) (car f))
+                                          chosen))
+                                found))
+            (n 0))
+       (dolist (f picked)
+         (let* ((affix (car f))
+                (end (cadr f)))
+           (dolist (m items)
+             (let* ((name (or (plist-get m :name) ""))
+                    (new (cond
+                          ((and (eq end 'head) (string-prefix-p affix name))
+                           (string-trim (substring name (length affix))))
+                          ((and (eq end 'tail) (string-suffix-p affix name))
+                           (string-trim (substring name 0
+                                                   (- (length name)
+                                                      (length affix)))))))) 
+               (when (and new (not (string-empty-p new)) (not (equal new name)))
+                 (org-upwell-save (plist-put (copy-sequence m) :name new))
+                 (setq n (1+ n)))))
+           (message "org-upwell: to strip this from every new sighting, add %S to org-upwell-title-noise"
+                    (if (eq end 'head)
+                        (concat "\\`" (regexp-quote affix))
+                      (concat (regexp-quote affix) "\\'")))))
+       (message "org-upwell: %d name%s shortened" n (if (= n 1) "" "s"))
+       n))))
+
+(defun org-upwell-bench-pin-directory ()
+  "Keep the place this row lives in, as an item of its own.
+
+The same place \\[org-upwell-open-directory] goes to: for a file, the
+directory holding it; for a directory, the one above.  Where the work is
+kept is a thing to come back to, and a heading that has it written down
+does not have to be navigated to from the top every morning.
+
+Sightings bring directories in on their own once you have been in one
+while the clock ran.  This is for the one you have not been in yet, or
+the one whose sighting you dropped."
+  (interactive)
+  (let* ((m (or (org-upwell--bench-item-at-point)
+                (user-error "No item on this line")))
+         (app (org-upwell-resolve m))
+         (path (and (eq (plist-get app :kind) 'path) (plist-get app :value))))
+    (unless path
+      (user-error "org-upwell: %s is not a file on this machine"
+                  (plist-get m :name)))
+    (let ((place (directory-file-name
+                  (file-name-directory (directory-file-name path)))))
+      (org-upwell-pin place (plist-get org-upwell-bench-domain :marker) "pin")
+      (org-upwell--bench-redraw)
+      (message "org-upwell: kept %s" (abbreviate-file-name place)))))
+
 (defun org-upwell-bench-add-file (path)
   "Claim PATH to the heading this bench is showing."
   (interactive (list (read-file-name "Add to this heading: " nil nil t)))
@@ -1067,7 +1277,8 @@ is: the two things the row had to shorten."
 (defconst org-upwell-bench-commands
   '((org-upwell-bench-open-at-point    row  "open it")
     (org-upwell-bench-open-in-emacs    row  "open in Emacs")
-    (org-upwell-open-directory         row  "its directory")
+    (org-upwell-open-directory         row  "go to its place")
+    (org-upwell-bench-pin-directory    row  "keep its place")
     (org-upwell-bench-toggle-mark      row  "mark, move down")
     (org-upwell-bench-unmark           row  "unmark, move up")
     (org-upwell-bench-keep             row  "keep it here")
@@ -1170,7 +1381,8 @@ WIDTH is the columns available, defaulting to this buffer's window."
   (define-key map (kbd "k") #'previous-line)
   (define-key map (kbd "o") #'org-upwell-visit-store)
   (define-key map (kbd "e") #'org-upwell-bench-open-in-emacs)
-  (define-key map (kbd "f") #'org-upwell-open-directory)
+  (define-key map (kbd "^") #'org-upwell-open-directory)
+  (define-key map (kbd "P") #'org-upwell-bench-pin-directory)
   (define-key map (kbd "RET") #'org-upwell-bench-open-at-point)
   (define-key map (kbd "a") #'org-upwell-bench-open-all)
   (define-key map (kbd "x") #'org-upwell-bench-open-marked)
@@ -1197,9 +1409,10 @@ all, like dired.  `g' and `r' both read the store again, which is what
 a bench left open while the clock runs needs.  `q' deletes the strip;
 follow will not cut another one until the heading changes.
 
-`f' opens the directory the file is in, with the file selected: the directory
-is what tells two files of the same name apart, so it is also where to
-go and look.
+`^' opens the directory the file is in, with the file selected -- the
+directory is what tells two files of the same name apart, so it is also
+where to go and look.  `P' keeps that place as an item of its own, which
+is how a heading comes to have the directory the work is done in.
 
 The echo area says what the line at point is, in full -- the name and
 where it actually is, which are the two things a column had to shorten.
