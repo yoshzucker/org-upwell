@@ -41,6 +41,7 @@
 ;;   org-upwell-claim.el    clock intersection, live and retroactive
 ;;   org-upwell-pin.el      explicit catch (pin, drop, org-protocol)
 ;;   org-upwell-bench.el    the listing, opening, resolve, follow
+;;   org-upwell-sight.el    what Emacs itself sees, written as traces
 ;;   org-upwell-watch.el    convenience starter for the watcher
 ;;   org-upwell-plan.el     foresight board signals
 ;;   org-upwell-demo.el     generated data, behind a toggle
@@ -55,6 +56,7 @@
 (require 'org-upwell-claim)
 (require 'org-upwell-pin)
 (require 'org-upwell-bench)
+(require 'org-upwell-sight)
 (require 'org-upwell-watch)
 (require 'org-upwell-plan)
 (require 'org-upwell-demo)
@@ -92,6 +94,7 @@ wait for the timer."
         (org-upwell-claim-setup)
         (org-upwell-plan-setup)
         (org-upwell-follow-setup)
+        (org-upwell-sight-mode 1)
         (add-hook 'org-mode-hook #'org-upwell-enable-dnd)
         (add-hook 'org-agenda-mode-hook #'org-upwell-enable-dnd)
         (when org-upwell-sync-interval
@@ -101,6 +104,7 @@ wait for the timer."
     (org-upwell-claim-teardown)
     (org-upwell-plan-teardown)
     (org-upwell-follow-teardown)
+    (org-upwell-sight-mode -1)
     (remove-hook 'org-mode-hook #'org-upwell-enable-dnd)
     (remove-hook 'org-agenda-mode-hook #'org-upwell-enable-dnd)
     (when org-upwell--sync-timer

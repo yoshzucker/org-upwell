@@ -1122,9 +1122,12 @@ read a file, so the disk is asked as well."
      (should (org-upwell-trace-directory-p (list :path "/gone/away/" :kind 'dir)))
      (should-not (org-upwell-trace-directory-p (list :path file :kind 'file))))))
 
-(ert-deftest org-upwell-test-a-directory-walked-through-is-not-an-item ()
-  "The bench lists things to open.  A directory somebody had open on the way
-to a file is where the work was kept, and the file is already there."
+(ert-deftest org-upwell-test-a-directory-walked-through-is-kept ()
+  "It was dropped once, on the reasoning that the bench lists things to open
+and the directory a file came from is already on the file's line.  That
+reasoning holds only for somebody whose file manager is watched from
+outside.  Where the work is kept is a thing to go to, and for anybody
+working in dired it is the thing nothing else records."
   (org-upwell-test--with-dir
    (let* ((directory (expand-file-name "procurement" dir))
           (sheet (expand-file-name "procurement/quote.csv" dir))
@@ -1140,14 +1143,17 @@ to a file is where the work was kept, and the file is already there."
       (floor (float-time (time-subtract now 1500))) sheet)
      (org-upwell-claim-interval mk (time-subtract now 3600) now)
      (should (org-upwell-find :path sheet))
-     (should-not (org-upwell-find :path directory))
-     (should (equal (list "quote.csv")
-                    (mapcar (lambda (m) (plist-get m :name))
-                            (org-upwell-claimed-to "T1")))))))
+     (should (org-upwell-find :path directory))
+     (should (org-upwell-directory-item-p (org-upwell-find :path directory)))
+     (should (equal (list "procurement" "quote.csv")
+                    (sort (mapcar (lambda (m) (plist-get m :name))
+                                  (org-upwell-claimed-to "T1"))
+                          #'string<))))))
 
-(ert-deftest org-upwell-test-a-spell-of-only-directories-writes-no-id ()
-  "`org-upwell-heading-id' creates an ID in the user's own file.  A spell
-with nothing to claim has no business leaving a mark there."
+(ert-deftest org-upwell-test-a-spell-of-only-directories-writes-an-id ()
+  "`org-upwell-heading-id\=' creates an ID in the user's own file, so it is
+asked for only when there is something to claim.  A spell that saw only
+directories used to be nothing; now the directory is the claim."
   (org-upwell-test--with-dir
    (let* ((directory (expand-file-name "procurement" dir))
           (file (org-upwell-test--write-journal "* NEXT Task\n"))
@@ -1157,17 +1163,30 @@ with nothing to claim has no business leaving a mark there."
      (org-upwell-test--write-trace
       (floor (float-time (time-subtract now 1800))) directory)
      (org-upwell-claim-interval mk (time-subtract now 3600) now)
+     (should (org-with-point-at mk (org-id-get)))
+     (should (org-upwell-find :path directory)))))
+
+(ert-deftest org-upwell-test-a-spell-that-saw-nothing-writes-no-id ()
+  "The guard that is still load-bearing: an ID in somebody's own file is
+the only write this package makes there, and a spell with nothing in it
+has no business leaving a mark."
+  (org-upwell-test--with-dir
+   (let* ((file (org-upwell-test--write-journal "* NEXT Task\n"))
+          (mk (org-upwell-test--heading-marker file))
+          (now (current-time)))
+     (org-upwell-claim-interval mk (time-subtract now 3600) now)
      (should-not (org-with-point-at mk (org-id-get))))))
 
-(ert-deftest org-upwell-test-sync-leaves-no-unclaimed-directory ()
+(ert-deftest org-upwell-test-sync-keeps-a-directory-seen-off-the-clock ()
   "Off the clock a trace becomes an unclaimed item, a row to deal with
-later.  A directory walked through is not a row to deal with."
+later.  A directory is such a row like any other now."
   (org-upwell-test--with-dir
    (let ((directory (expand-file-name "procurement" dir)))
      (make-directory directory t)
      (org-upwell-test--write-trace (floor (float-time (current-time))) directory)
      (org-upwell-sync 1)
-     (should-not (org-upwell-find :path directory)))))
+     (should (org-upwell-directory-item-p
+              (org-upwell-find :path directory))))))
 
 ;;;; What the bench line says
 
@@ -1741,6 +1760,262 @@ void-function at the keyboard."
               (indirect-function 'org-upwell-open-directory)))
   (should (eq (indirect-function 'org-upwell-trace-folder-p)
               (indirect-function 'org-upwell-trace-directory-p))))
+
+;;;; Kind, and the round trip a property has to survive
+
+(ert-deftest org-upwell-test-one-directory-is-one-record ()
+  "A directory arrives with a separator on the end from one watcher and
+without it from another, and identity is exact string equality.  Trimmed
+on the way in, so pinning it and then walking through it do not leave two
+rows for one place."
+  (org-upwell-test--with-dir
+    (let ((sub (expand-file-name "papers" dir)))
+      (make-directory sub t)
+      (org-upwell-save (list :path (file-name-as-directory sub)))
+      (org-upwell-save (list :path sub))
+      (should (= 1 (length (org-upwell-items))))
+      (should (equal sub (plist-get (car (org-upwell-items)) :path))))))
+
+(ert-deftest org-upwell-test-a-directory-says-the-place-above-it ()
+  "The where column answers \"which of the two same-named things is this\".
+For a file that is the directory holding it; for a directory it has to be
+the one above, or the row says its own name twice."
+  (should (equal "/tmp/a/b"
+                 (org-upwell--item-where (list :path "/tmp/a/b/c.xlsx"))))
+  (should (equal "/tmp/a"
+                 (org-upwell--item-where (list :path "/tmp/a/b" :kind "dir")))))
+
+(ert-deftest org-upwell-test-a-directory-is-stood-in-not-opened ()
+  "`org-upwell-open-function\=' is a policy about which extensions belong to
+the OS and which to Emacs.  A directory has no extension and no such
+answer."
+  (org-upwell-test--with-dir
+    (let ((sub (expand-file-name "papers" dir))
+          (revealed nil)
+          (opened nil))
+      (make-directory sub t)
+      (let ((item (org-upwell-save (list :path sub))))
+        (cl-letf (((symbol-function 'org-upwell--reveal-external)
+                   (lambda (p) (setq revealed p)))
+                  ((symbol-function 'org-upwell--open-path-external)
+                   (lambda (p) (setq opened p))))
+          (org-upwell-open item))
+        (should (equal sub revealed))
+        (should-not opened)))))
+
+
+(ert-deftest org-upwell-test-kind-goes-in-and-comes-back-the-same ()
+  "A property value is a string.  A field that goes in as a symbol comes
+back as a string and never compares equal to itself, which makes every
+save think the heading changed -- so the store is rewritten on a pass
+that changed nothing."
+  (org-upwell-test--with-dir
+    (let* ((sub (expand-file-name "papers" dir))
+           (file (expand-file-name "quote.csv" dir)))
+      (make-directory sub t)
+      (write-region "x" nil file)
+      (should (equal "dir" (plist-get (org-upwell-save (list :path sub)) :kind)))
+      (should (equal "file" (plist-get (org-upwell-save (list :path file)) :kind)))
+      ;; and it reads back as the same string, not as a symbol
+      (should (equal "dir" (plist-get (org-upwell-find :path sub) :kind)))
+      (should (org-upwell-directory-item-p (org-upwell-find :path sub)))
+      (should-not (org-upwell-directory-item-p (org-upwell-find :path file))))))
+
+(ert-deftest org-upwell-test-a-stale-item-saved-twice-writes-once ()
+  "The whole reason the round trip matters.  `:stale\=' went in as t and came
+back as \"t\", so every save of a stale item called the heading changed and
+sent the store to disk again."
+  (org-upwell-test--with-dir
+    (let ((path (expand-file-name "quote.csv" dir))
+          (writes 0)
+          (orig (symbol-function 'save-buffer)))
+      (write-region "x" nil path)
+      (org-upwell-save (list :path path :stale t))
+      (cl-letf (((symbol-function 'save-buffer)
+                 (lambda (&rest a) (setq writes (1+ writes)) (apply orig a))))
+        (org-upwell-save (list :path path :stale t)))
+      (should (= 0 writes)))))
+
+(ert-deftest org-upwell-test-a-record-from-before-the-field-gets-one ()
+  "A store written before `UPWELL_KIND\=' existed carries none.  The next
+sighting has to fill it in, which it only does if the field is one of the
+things a save compares."
+  (org-upwell-test--with-dir
+    (let ((sub (expand-file-name "papers" dir)))
+      (make-directory sub t)
+      (org-upwell-save (list :path sub))
+      ;; make it look like a record from before the field
+      (with-current-buffer (find-file-noselect (org-upwell-file))
+        (goto-char (point-min))
+        (should (search-forward org-upwell-prop-kind nil t))
+        (org-back-to-heading t)
+        (org-entry-delete (point) org-upwell-prop-kind)
+        (save-buffer))
+      (org-upwell--store-drop (plist-get (org-upwell-find :path sub) :id))
+      (should-not (plist-get (org-upwell-find :path sub) :kind))
+      (org-upwell-save (list :path sub))
+      (should (equal "dir" (plist-get (org-upwell-find :path sub) :kind))))))
+
+(ert-deftest org-upwell-test-a-record-without-a-kind-reads-as-a-file ()
+  "Written before the field existed.  It answers \"file\" until the next
+sighting fills it in, rather than costing a stat on every walk of the
+store -- one of these paths may be on a file server."
+  (should (equal "file" (org-upwell-kind (list :path "/anywhere"))))
+  (should-not (org-upwell-directory-item-p (list :path "/anywhere"))))
+
+;;;; What Emacs itself sees
+
+(ert-deftest org-upwell-test-a-written-trace-reads-back ()
+  "Emacs writes into the file the watcher writes, so the reader must not be
+able to tell them apart.  Built with `json-encode\=' rather than by hand
+because the path that would break a hand-built line -- a quote, a
+backslash, a character outside ASCII -- is a path somebody really has."
+  (org-upwell-test--with-dir
+    (dolist (name (list "plain.txt"
+                        "with space.txt"
+                        "with \"quote\".txt"
+                        "納品スケジュール.xlsx"))
+      (let ((path (expand-file-name name dir)))
+        (org-upwell-trace-write :path path :kind "file")))
+    (let* ((traces (org-upwell-read-trace-file (org-upwell-trace-file)))
+           (paths (mapcar (lambda (tr) (plist-get tr :path)) traces)))
+      (should (= 4 (length traces)))
+      (dolist (name (list "plain.txt" "with space.txt"
+                          "with \"quote\".txt" "納品スケジュール.xlsx"))
+        (should (member (expand-file-name name dir) paths)))
+      ;; and the fields the watcher writes are all there
+      (let ((one (car traces)))
+        (should (numberp (plist-get one :ts)))
+        (should (equal "Emacs" (plist-get one :app)))
+        (should (eq 'file (plist-get one :kind)))))))
+
+(ert-deftest org-upwell-test-a-written-directory-keeps-its-kind ()
+  "`kind\=' is the one field that says a directory is a directory when the
+path no longer exists to be asked."
+  (org-upwell-test--with-dir
+    (org-upwell-trace-write :path (expand-file-name "gone" dir) :kind "dir")
+    (let ((tr (car (org-upwell-read-trace-file (org-upwell-trace-file)))))
+      (should (eq 'dir (plist-get tr :kind))))))
+
+(ert-deftest org-upwell-test-dired-is-written-down-once ()
+  "The directory dired is showing is the thing nothing else can see.  Written
+when it changes, and not again while you stay -- the rule the watcher
+follows, for the same reason."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-sight--buffer nil)
+          (org-upwell-sight--payload nil)
+          (here (expand-file-name "acme" dir)))
+      (make-directory here t)
+      (dired here)
+      (unwind-protect
+          (progn
+            (org-upwell-sight--update)
+            (should (= 1 (length (org-upwell-read-trace-file
+                                  (org-upwell-trace-file)))))
+            ;; staying is silent, even after the buffer pointer is forgotten
+            (setq org-upwell-sight--buffer nil)
+            (org-upwell-sight--update)
+            (should (= 1 (length (org-upwell-read-trace-file
+                                  (org-upwell-trace-file)))))
+            (let ((tr (car (org-upwell-read-trace-file
+                            (org-upwell-trace-file)))))
+              (should (eq 'dir (plist-get tr :kind)))
+              ;; no trailing separator: the shape the store keeps
+              (should (equal here (plist-get tr :path)))))
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest org-upwell-test-only-work-files-are-written-down ()
+  "A file under the roots is work.  One outside them is a configuration
+file, a library, or this package's own store, and a bench buried in those
+would be worse than a bench missing a file."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "work" dir))
+           (elsewhere (expand-file-name "elsewhere" dir))
+           (org-upwell-search-roots (list work)))
+      (make-directory work t)
+      (make-directory elsewhere t)
+      (dolist (case (list (cons (expand-file-name "quote.csv" work) t)
+                          (cons (expand-file-name "init.el" elsewhere) nil)
+                          ;; the store, even when it sits in a root
+                          (cons (org-upwell-file) nil)))
+        (let ((path (car case))
+              (wanted (cdr case))
+              (org-upwell-sight--buffer nil)
+              (org-upwell-sight--payload nil))
+          (make-directory (file-name-directory path) t)
+          (write-region "x" nil path)
+          (let ((buf (find-file-noselect path)))
+            (unwind-protect
+                (with-current-buffer buf
+                  (should (eq wanted
+                              (and (org-upwell-sight--payload) t))))
+              (kill-buffer buf))))))))
+
+(ert-deftest org-upwell-test-what-emacs-saw-is-claimed-like-anything-else ()
+  "The whole point of writing into the watcher's own file: nothing
+downstream is told which process saw the thing."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "work" dir))
+           (org-upwell-search-roots (list work))
+           (sheet (expand-file-name "quote.csv" work))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (current-time)))
+      (make-directory work t)
+      (write-region "x" nil sheet)
+      (let ((buf (find-file-noselect sheet))
+            (org-upwell-sight--buffer nil)
+            (org-upwell-sight--payload nil))
+        (unwind-protect
+            (with-current-buffer buf (org-upwell-sight--update))
+          (kill-buffer buf)))
+      (org-upwell-claim-interval mk (time-subtract now 3600)
+                                 (time-add now 60))
+      (should (equal (list "quote.csv")
+                     (mapcar (lambda (m) (plist-get m :name))
+                             (org-upwell-claimed-to "T1")))))))
+
+(ert-deftest org-upwell-test-a-dired-directory-reaches-the-heading ()
+  "End to end, and the reason this half of capture exists.  The resident
+watcher has no branch for Emacs, so a person who does their directory work
+in dired had nothing recorded at all -- and the directory that was
+recorded by the other watchers was thrown away before it could be claimed.
+Both halves have to hold for this to pass."
+  (org-upwell-test--with-dir
+    (let* ((here (expand-file-name "acme" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (now (current-time)))
+      (make-directory here t)
+      (dired here)
+      (unwind-protect
+          (let ((org-upwell-sight--buffer nil)
+                (org-upwell-sight--payload nil))
+            (org-upwell-sight--update))
+        (kill-buffer (current-buffer)))
+      (org-upwell-claim-interval mk (time-subtract now 3600)
+                                 (time-add now 60))
+      (let ((claimed (org-upwell-claimed-to "T1")))
+        (should (equal (list "acme") (mapcar (lambda (m) (plist-get m :name))
+                                             claimed)))
+        (should (org-upwell-directory-item-p (car claimed)))
+        (should (equal here (plist-get (car claimed) :path)))))))
+
+(ert-deftest org-upwell-test-sight-mode-is-on-with-the-mode ()
+  "Nothing to configure: the watcher cannot see in here, so Emacs looking at
+itself is part of catching the hour, not an extra."
+  (let ((was org-upwell-mode))
+    (unwind-protect
+        (progn
+          (org-upwell-mode 1)
+          (should org-upwell-sight-mode)
+          (should (memq #'org-upwell-sight--update post-command-hook))
+          (org-upwell-mode -1)
+          (should-not org-upwell-sight-mode)
+          (should-not (memq #'org-upwell-sight--update post-command-hook)))
+      (org-upwell-mode (if was 1 -1)))))
 
 (provide 'org-upwell-test)
 

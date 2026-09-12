@@ -85,25 +85,6 @@ a fraction."
 
 ;;;; Resolve / open
 
-(defcustom org-upwell-search-roots '("~/Downloads/")
-  "Directories to look in when a stored path has gone.
-
-A file that was renamed, or filed away into a `done' directory, is found
-again by its file-id or its basename under these.  Only directories that
-exist are searched, so one list may name the trees of several machines.
-
-Keep it short.  This is walked on every appearance that has gone stale,
-and a root the size of a whole home directory turns a resolve into a
-wait."
-  :type '(repeat directory)
-  :group 'org-upwell)
-
-(defun org-upwell--search-roots ()
-  "Existing directories among `org-upwell-search-roots'."
-  (seq-filter #'file-directory-p
-              (delq nil (mapcar (lambda (d) (and d (expand-file-name d)))
-                                org-upwell-search-roots))))
-
 (defun org-upwell-resolve (item)
   "Return a still-usable appearance of ITEM, updating the store.
 
@@ -131,7 +112,8 @@ does not die."
       (list :kind 'path :value found))
      ((and path
            (setq found (org-upwell--find-by-basename
-                        (file-name-nondirectory path))))
+                        (file-name-nondirectory path)
+                        (org-upwell-kind item))))
       (org-upwell-save (list :id (plist-get item :id)
                              :path found
                              :stale nil))
@@ -146,21 +128,30 @@ does not die."
       (org-upwell-save (plist-put (copy-sequence item) :stale t))
       nil))))
 
-(defun org-upwell--files-named (name)
+(defun org-upwell--files-named (name &optional kind)
   "Return absolute paths named NAME under `org-upwell-search-roots'.
+
+KIND is \"dir\" to look for a directory instead of a file.  Asked for,
+because a directory that moved can never be found by a search for files
+-- which is what this was until directories became things to keep.
 
 Uses fd when it is on PATH.  A project tree big enough to be worth
 searching is also big enough that a Lisp walk of it is a visible hitch."
-  (let ((rx (concat "\\`" (regexp-quote name) "\\'"))
-        hits)
+  (let* ((dirp (equal kind "dir"))
+         (rx (concat "\\`" (regexp-quote name) "\\'"))
+         hits)
     (dolist (root (org-upwell--search-roots) hits)
       (when (and root (file-directory-p root))
         (setq hits
               (append hits
                       (if (executable-find "fd")
                           (ignore-errors
-                            (process-lines "fd" "-a" "-t" "f" "--glob" name root))
-                        (directory-files-recursively root rx))))))))
+                            (process-lines "fd" "-a" "-t" (if dirp "d" "f")
+                                           "--glob" name root))
+                        (seq-filter (if dirp #'file-directory-p
+                                      (lambda (f) (not (file-directory-p f))))
+                                    (directory-files-recursively
+                                     root rx dirp)))))))))
 
 (defun org-upwell--find-by-file-id (file-id)
   "Return a path whose file-id is FILE-ID.
@@ -174,11 +165,11 @@ into `done&info'."
     (when name
       (seq-find (lambda (f) (org-upwell-file-id-equal file-id
                                                       (org-upwell-file-id f)))
-                (org-upwell--files-named name)))))
+                (org-upwell--files-named name (org-upwell-kind known))))))
 
-(defun org-upwell--find-by-basename (name)
-  "Return the first file named NAME under the search roots."
-  (car (org-upwell--files-named name)))
+(defun org-upwell--find-by-basename (name &optional kind)
+  "Return the first thing named NAME, of KIND, under the search roots."
+  (car (org-upwell--files-named name kind)))
 
 (defun org-upwell-open (item &optional method)
   "Open ITEM via the first still-usable appearance.
@@ -197,9 +188,16 @@ growing the frame to keep the main window's size."
                 :opened (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
     (pcase (plist-get app :kind)
       ('path
-       (if (eq method 'emacs)
-           (org-upwell--open-path-emacs (plist-get app :value))
-         (org-upwell--open-path-external (plist-get app :value))))
+       (cond
+        ;; `org-upwell-open-function' is a policy about which extensions
+        ;; belong to the OS and which to Emacs.  A directory has no
+        ;; extension and no such answer; standing in it is what opening one
+        ;; means.
+        ((org-upwell-directory-item-p item)
+         (org-upwell--reveal-external (plist-get app :value)))
+        ((eq method 'emacs)
+         (org-upwell--open-path-emacs (plist-get app :value)))
+        (t (org-upwell--open-path-external (plist-get app :value)))))
       ('office (org-upwell--open-url (plist-get app :value)))
       ('url (org-upwell--open-url (plist-get app :value))))))
 

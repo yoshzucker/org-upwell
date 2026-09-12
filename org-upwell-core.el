@@ -76,6 +76,13 @@ Nil uses `org-open-file'.  Dotfiles that already have an open policy
 (defconst org-upwell-prop-captured "UPWELL_CAPTURED")
 (defconst org-upwell-prop-opened "UPWELL_OPENED")
 (defconst org-upwell-prop-stale "UPWELL_STALE")
+(defconst org-upwell-prop-kind "UPWELL_KIND"
+  "Property saying whether the item is a file or a directory.
+
+Always the string \"file\" or \"dir\".  A property value has to be a string
+-- `org-entry-put\=' refuses anything else -- and a field that goes in as a
+symbol and comes back as a string never compares equal to itself, which
+makes every save think the heading changed.")
 
 (defvar org-upwell-last-bench-id nil
   "Org-id of the heading last expanded.
@@ -177,6 +184,43 @@ this package is here to stop repeating."
                 ((string-match-p "office\\.com/launch/word" url) "word"))))
           (when app
             (concat "ms-" app ":ofe|u|" url))))))))
+
+(defcustom org-upwell-search-roots '("~/Downloads/")
+  "The trees this person's work files live in.
+
+Asked two questions, and they are the same question.  When a stored path
+has gone, a file that was renamed or filed away into a `done\=' directory is
+found again by its file-id or its basename under these.  And when Emacs
+itself is the window in front, a file under these is work and worth
+writing down, while one outside them is a configuration file, a library,
+or this package\='s own store -- see `org-upwell-sight-mode\='.
+
+Only directories that exist are used, so one list may name the trees of
+several machines.
+
+Keep it short.  The first use walks it on every appearance that has gone
+stale, and a root the size of a whole home directory turns a resolve into
+a wait."
+  :type '(repeat directory)
+  :group 'org-upwell)
+
+(defun org-upwell--search-roots ()
+  "Existing directories among `org-upwell-search-roots'."
+  (seq-filter #'file-directory-p
+              (delq nil (mapcar (lambda (d) (and d (expand-file-name d)))
+                                org-upwell-search-roots))))
+
+(defun org-upwell-kind (item)
+  "Return \"dir\" or \"file\" for ITEM.
+
+\"file\" when the store does not say.  A record written before the field
+existed carries nothing, and a directory among those reads as a file until
+the next time it is sighted -- which is the moment the field is filled in."
+  (or (plist-get item :kind) "file"))
+
+(defun org-upwell-directory-item-p (item)
+  "Return non-nil when ITEM is a directory rather than a file."
+  (equal "dir" (org-upwell-kind item)))
 
 (defun org-upwell--looks-like-url (s)
   "Return non-nil when S is an http(s) URL."
@@ -310,7 +354,11 @@ item with no name is a blank line on the bench."
           :provenance (org-entry-get (point) org-upwell-prop-provenance)
           :captured (org-entry-get (point) org-upwell-prop-captured)
           :opened (org-entry-get (point) org-upwell-prop-opened)
-          :stale (org-entry-get (point) org-upwell-prop-stale)
+          ;; `t\=' rather than the stored "t": what goes in has to be what
+          ;; comes out, or `org-upwell--unchanged-p\=' calls every stale item
+          ;; changed and sends the store to disk on every resolve.
+          :stale (and (org-entry-get (point) org-upwell-prop-stale) t)
+          :kind (org-entry-get (point) org-upwell-prop-kind)
           :marker (point-marker))))
 
 (defvar org-upwell--store nil
@@ -439,7 +487,7 @@ for nothing."
        (seq-every-p (lambda (key)
                       (equal (plist-get item key) (plist-get existing key)))
                     '(:id :name :path :url :office :file-id
-                      :provenance :captured :opened :stale))))
+                      :provenance :captured :opened :stale :kind))))
 
 (defun org-upwell--write-at-point (item)
   "Write ITEM's properties onto the heading at point."
@@ -452,7 +500,8 @@ for nothing."
                   (,org-upwell-prop-file-id :file-id)
                   (,org-upwell-prop-provenance :provenance)
                   (,org-upwell-prop-captured :captured)
-                  (,org-upwell-prop-opened :opened)))
+                  (,org-upwell-prop-opened :opened)
+                  (,org-upwell-prop-kind :kind)))
     (let ((val (plist-get item (cadr pair))))
       (if (and val (not (string-empty-p val)))
           (org-entry-put (point) (car pair) val)
@@ -475,6 +524,14 @@ a trace that knows the path must not wipe a protocol the pin already had.
 `:claims' and `:stale' are the exceptions: a caller that names them owns
 them, so the last claim can actually be taken off."
   (org-upwell--ensure-file)
+  ;; A directory arrives with a separator on the end from one watcher and
+  ;; without it from another, and identity is exact string equality -- so one
+  ;; directory became two records depending on who saw it.  Trimmed before
+  ;; anything is asked about it, and without touching the disk: a file path
+  ;; never ends in a separator, so this only ever changes a directory.
+  (when (plist-get item :path)
+    (setq item (plist-put (copy-sequence item) :path
+                          (directory-file-name (plist-get item :path)))))
   (let* ((existing (or (and (plist-get item :id)
                             (org-upwell-find :id (plist-get item :id)))
                        (org-upwell-find-any item)))
@@ -506,8 +563,10 @@ them, so the last claim can actually be taken off."
                 :opened (or (plist-get item :opened)
                             (and existing (plist-get existing :opened)))
                 :stale (if (plist-member item :stale)
-                           (plist-get item :stale)
-                         (and existing (plist-get existing :stale)))
+                           (and (plist-get item :stale) t)
+                         (and existing (plist-get existing :stale) t))
+                :kind (or (plist-get item :kind)
+                          (and existing (plist-get existing :kind)))
                 :marker (and existing (plist-get existing :marker)))))
     (when (and (plist-get merged :url) (not (plist-get merged :office)))
       (let ((minted (org-upwell-mint-office (plist-get merged :url))))
@@ -517,6 +576,13 @@ them, so the last claim can actually be taken off."
                (file-exists-p (plist-get merged :path)))
       (setq merged (plist-put merged :file-id
                               (org-upwell-file-id (plist-get merged :path)))))
+    ;; Asked here and not when reading: reading happens on every walk of the
+    ;; store, and one of these paths may be on a file server where a stat is
+    ;; not free.  Here the disk has already answered for the file-id.
+    (when (and (plist-get merged :path) (not (plist-get merged :kind)))
+      (setq merged (plist-put merged :kind
+                              (if (file-directory-p (plist-get merged :path))
+                                  "dir" "file"))))
     (when (org-upwell--unchanged-p merged existing)
       (org-upwell--store-remember merged)
       (setq merged nil))

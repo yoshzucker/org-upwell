@@ -81,6 +81,32 @@ line parse the same way."
                         (and clean (not (string-empty-p clean)) clean))
                       url)))))
 
+(defun org-upwell-trace-write (&rest plist)
+  "Append one sighting to today's trace file.
+
+PLIST takes `:path\=', `:url\=', `:kind\=', `:title\=' and `:app\='.  The line is
+the same six fields the resident watcher writes, because the reader and
+the clock intersection downstream must not be able to tell which of the
+two saw the thing.
+
+Written with `json-encode\=' rather than by hand: the watchers escape their
+own strings, and a path with a quote or a backslash in it is exactly the
+one that would otherwise write a line nothing can parse."
+  (let* ((file (org-upwell-trace-file))
+         (line (json-encode
+                `(("ts" . ,(floor (float-time)))
+                  ("app" . ,(or (plist-get plist :app) "Emacs"))
+                  ("title" . ,(or (plist-get plist :title) ""))
+                  ("path" . ,(or (plist-get plist :path) ""))
+                  ("url" . ,(or (plist-get plist :url) ""))
+                  ("kind" . ,(or (plist-get plist :kind) "file"))))))
+    (make-directory (file-name-directory file) t)
+    (let ((coding-system-for-write 'utf-8-unix))
+      ;; Appended, and one line at a time: the watcher is appending to this
+      ;; same file from another process all day.
+      (write-region (concat line "\n") nil file t 'silent))
+    file))
+
 (defun org-upwell-read-trace-file (file)
   "Return traces recorded in FILE, skipping unreadable lines."
   (if (not (file-readable-p file))
@@ -234,12 +260,18 @@ So the disk is asked, after `kind\=' has had its say."
 vocabulary, and this package speaks its own.")
 
 (defun org-upwell-trace-to-spec (trace)
-  "Turn TRACE into an item spec plist."
+  "Turn TRACE into an item spec plist.
+
+`:kind\=' is decided by `org-upwell-trace-directory-p\=' rather than copied
+from the trace: the Windows watcher reports a selected directory as a
+file, so the field alone is not the answer.  It goes to the store as a
+string, because a property value is a string."
   (list :name (plist-get trace :name)
         :path (plist-get trace :path)
         :url (plist-get trace :url)
         :office (plist-get trace :office)
         :file-id (plist-get trace :file-id)
+        :kind (if (org-upwell-trace-directory-p trace) "dir" "file")
         :provenance "trace"))
 
 (provide 'org-upwell-trace)
