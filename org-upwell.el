@@ -42,6 +42,7 @@
 ;;   org-upwell-pin.el      explicit catch (pin, drop, org-protocol)
 ;;   org-upwell-bench.el    the listing, opening, resolve, follow
 ;;   org-upwell-sight.el    what Emacs itself sees, written as traces
+;;   org-upwell-matrix.el   one family of headings, and what each holds
 ;;   org-upwell-watch.el    convenience starter for the watcher
 ;;   org-upwell-plan.el     foresight board signals
 ;;   org-upwell-demo.el     generated data, behind a toggle
@@ -57,6 +58,7 @@
 (require 'org-upwell-pin)
 (require 'org-upwell-bench)
 (require 'org-upwell-sight)
+(require 'org-upwell-matrix)
 (require 'org-upwell-watch)
 (require 'org-upwell-plan)
 (require 'org-upwell-demo)

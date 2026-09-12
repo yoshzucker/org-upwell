@@ -105,6 +105,8 @@ including ~expand=~ in the org-protocol URL.
 | ~org-upwell-open-named~ | Completing-read over the store |
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
 | ~org-upwell-tidy-names~ | Offer the runs of text many stored names share, and strip the chosen ones |
+| ~org-upwell-copy-from~ | Copy another heading's items onto this one, provisionally |
+| ~org-upwell-matrix~ | One family of headings as a grid: rows are things, columns are headings, a cell is a claim |
 | (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
 | ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
@@ -118,6 +120,10 @@ there are any, the line point is on when there are none.
 | ~e~ | Visit inside Emacs, in another window |
 | ~^~ | Go to the place this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
 | ~P~ | Keep that place, as an item of its own |
+| ~W~ | Say that this row's directory is where the work is done (writes ~:UPWELL_DIR:~, which is inherited) |
+| ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
+| ~y~ | Copy another heading's items onto this one |
+| ~T~ | The whole family, as a grid |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |
 | ~d~ | Take it off this heading, and have that stay said |
@@ -136,17 +142,19 @@ says only that there is no item there:
 
 #+begin_example
 on this line, or the marked ones
-    RET  open it            u    unmark, move up
-    e    open in Emacs      c    keep it here
-    ^    go to its place    d    drop from here
-    P    keep its place     R    move elsewhere
-    m    mark, move down    D    forget entirely
+    RET  open it            m    mark, move down
+    e    open in Emacs      u    unmark, move up
+    ^    go to its place    c    keep it here
+    P    keep its place     d    drop from here
+    W    work here          R    move elsewhere
+    M    move it here       D    forget entirely
 on the bench
-    a    open every one     +    add a file
-    x    open the marked    L    add a URL
-    t    invert marks       o    the store file
-    U    unmark them all    q    hide the bench
-    r    read the store
+    a    open every one     L    add a URL
+    x    open the marked    y    copy from
+    t    invert marks       T    the family
+    U    unmark them all    o    the store file
+    r    read the store     q    hide the bench
+    +    add a file
 Drop a file or URL here to pin it to this heading.
 #+end_example
 
@@ -212,6 +220,72 @@ org-protocol, for a browser (bookmarklet in
 : org-protocol://upwell?url=…&title=…
 : org-protocol://upwell?bench=ORG-ID
 
+* Where the work is done
+
+A heading can say where its work happens, and the bench marks that row
+~main~. It is ~:UPWELL_DIR:~ on the heading, which is inherited -- written
+on a project, every task under it answers the same way -- and it is the
+same property ~org-upwell-create~ puts a new file in, because those are one
+fact and not two. ~W~ on a directory row writes it.
+
+Unmarked, the bench guesses: the directory holding the most of this
+heading's files, shown as ~main?~. Free and often right, and it is a count
+-- a heading whose downloads have piled up guesses the download directory.
+~W~ is how to settle it.
+
+~M~ moves this row's file there. It is the one thing this package does to a
+file rather than about it, so it asks first, it says when the destination
+was a guess, and it never writes over a name already taken: that is a
+different document with the same name, and choosing which of them survives
+is not a thing a listing gets to do. The store follows the file.
+
+* The family, as a grid
+
+The bench answers one heading, which is the unit for working and the wrong
+one for tidying. Tasks come in families -- the next one is the last one
+continued, and it was given the same three files -- and after a few rounds
+the same document is on six headings, one of which should never have had
+it. A single bench cannot show that, because what is wrong is a relation
+between two of them.
+
+~T~ on the bench, or ~M-x org-upwell-matrix~. Rows are things, columns are
+headings, a cell is a claim: ~×~ is an answer somebody gave, ~·~ a proposal
+nobody has looked at, and a refusal draws nothing.
+
+#+begin_example
+Move to the new vendor
+   1  Move to the new vendor
+   2    NEXT Compare the three quotes
+   3      NEXT Send the recommendation  (no id)
+   4    NEXT File the photos
+   5    NEXT Read the vendor manual
+
+                                             1 2 3 4 5
+  dir     files              …/demo            ×
+  slides  Vendor day deck    contoso.sh…      ×     ·
+  csv     quote-acme.csv     …/demo/files     ×
+  pdf     vendor manual      example.com            ×
+#+end_example
+
+The family is the heading at point's *parent* and everything under it, so
+standing on a leaf task shows the siblings it was continued from. With a
+prefix argument the family is read from a list.
+
+The columns are numbered rather than named. Titles as column headers fit
+six or eight of them in eighty columns, cut to four characters each, which
+is not a word; numbers fit twenty and lose nothing, because the list above
+the grid says the rest and the echo area says which heading the cursor's
+column is.
+
+~d~ takes a thing off one heading and leaves both. ~c~ keeps it there. ~y~
+copies a whole column onto another, which is the move that made this buffer
+necessary and the one that makes a mess of it. ~R~ renames a thing and ~D~
+forgets it everywhere; neither touches a file.
+
+A heading with no org-id holds nothing and is marked ~(no id)~ -- this
+walks your own file, and minting an id for every heading in a subtree in
+order to draw a picture of it would be a write nobody asked for.
+
 * How attribution works
 
 Two clocks, not one.
@@ -222,6 +296,7 @@ Two clocks, not one.
 | The same, for what Emacs is looking at | when the buffer changes: a dired listing's directory, and a file under ~org-upwell-search-roots~ | Emacs itself (~org-upwell-sight-mode~) |
 | A *provisional claim* | Emacs intersects traces with CLOCK intervals: a 60s timer while Emacs is up, immediately on clock-out, immediately after a clock is filled in from the agenda | Emacs |
 | A *confirmed claim* | ~c~ on the bench, which clock-out opens for the heading it just closed. An explicit pin or drop is confirmed at once | you |
+| A *copy* | ~y~ on the bench, or a column onto another in the grid. Provisional, and what the far heading has already settled is left alone | you |
 | A *rejection* | ~d~ or ~r~ on the bench. Written down, because the intersection runs again a minute later and would otherwise propose the same file | you |
 
 Clock-out shows the bench and asks nothing: one spell often touches

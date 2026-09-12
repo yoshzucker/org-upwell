@@ -56,13 +56,20 @@ all three."
                  (const :tag "Say nothing" nil))
   :group 'org-upwell)
 
-(defcustom org-upwell-inherit-on-clock-in t
-  "When non-nil, clocking in copies items from the last expanded heading.
+(defcustom org-upwell-inherit-on-clock-in nil
+  "When non-nil, clocking in copies items from the last heading laid out.
 
-The copy is provisional.  This is the case where a DONE task's files are
-reopened (expand) and a new NEXT is clocked: the same files attach to
-the new heading without being dropped on it again.  Same heading, or
-nothing last expanded, is a no-op.  A confirmed claim is not downgraded."
+The copy is provisional, the same heading is a no-op, and a confirmed
+claim is not downgraded.
+
+Off by default, and it did not used to be.  The case it was written for is
+real: a finished task's files are still open, a new NEXT is clocked, and
+the same files belong to it without being dropped on again.  But what
+triggers it is the last heading whose bench was drawn, and drawing a bench
+is now what asking to *look* does -- so glancing at one heading and then
+clocking another copied the first one's whole set onto the second, and
+nothing on the screen said it had happened.  `org-upwell-copy-from\=' is
+the same act asked for out loud."
   :type 'boolean
   :group 'org-upwell)
 
@@ -340,14 +347,17 @@ decision starts costing more than leaving the file unclaimed."
 
 (defun org-upwell-inherit-to-heading (from-id to-id)
   "Provisionally claim every item of FROM-ID onto TO-ID.
-What a person already settled on TO-ID -- kept or rejected -- is left
-alone.  Return how many were copied."
+
+What TO-ID already holds is left alone, whatever it is: kept, refused, or
+already proposed.  So the count returned is the number that were not
+there before, and copying twice writes nothing the second time -- a
+message saying three were copied when nothing changed is a small lie, and
+re-claiming what is already claimed sends the store to disk for nothing."
   (let ((n 0))
     (dolist (m (org-upwell-claimed-to from-id) n)
-      (let ((status (org-upwell-claim-status (plist-get m :claims) to-id)))
-        (unless (memq status '(confirmed rejected))
-          (org-upwell-claim m to-id 'provisional)
-          (setq n (1+ n)))))))
+      (unless (org-upwell-claim-status (plist-get m :claims) to-id)
+        (org-upwell-claim m to-id 'provisional)
+        (setq n (1+ n))))))
 
 (defun org-upwell--inherit-from-last-bench (marker)
   "Copy items from `org-upwell-last-bench-id' onto MARKER, if different."

@@ -328,7 +328,9 @@ This is foresight's C: the work already happened, the clock lands later."
                             (org-upwell-claimed-to "H2")))))))
 
 (ert-deftest org-upwell-test-inherit-copies-provisionally ()
-  "Clocking a new heading copies the last expanded heading's items."
+  "The primitive: copied provisionally, and what the other heading had
+settled is left as it was.  Whether anything calls it automatically is a
+separate question -- see the two tests below."
   (org-upwell-test--with-dir
    (let ((m (org-upwell-save (list :url "https://a.sharepoint.com/:x:/r/deck.pptx"
                                    :name "deck.pptx"))))
@@ -339,6 +341,65 @@ This is foresight's C: the work already happened, the clock lands later."
                  (org-upwell-claim-status (plist-get m :claims) "DONE-HEAD")))
      (should (eq 'provisional
                  (org-upwell-claim-status (plist-get m :claims) "NEXT-HEAD"))))))
+
+(ert-deftest org-upwell-test-nothing-is-inherited-without-being-asked ()
+  "Drawing a bench is what asking to *look* does, and the last bench drawn
+is what the automatic copy triggered on -- so glancing at one heading and
+then clocking another copied the first one's whole set onto the second,
+with nothing on the screen to say it had happened."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\n* NEXT Two\n:PROPERTIES:\n:ID: B\n:END:\n"))
+           (b (org-upwell-test--marker-at-id file "B")))
+      (org-upwell-claim (org-upwell-save (list :url "https://x/deck.pptx"
+                                               :name "deck.pptx"))
+                        "A" 'confirmed)
+      (let ((org-upwell-last-bench-id "A"))
+        ;; the default
+        (org-upwell--inherit-from-last-bench b)
+        (should-not (org-upwell-claimed-to "B"))
+        ;; and the mechanism is still there for anybody who wants it
+        (let ((org-upwell-inherit-on-clock-in t))
+          (org-upwell--inherit-from-last-bench b))
+        (should (equal '("deck.pptx")
+                       (mapcar (lambda (m) (plist-get m :name))
+                               (org-upwell-claimed-to "B"))))))))
+
+(ert-deftest org-upwell-test-copy-from-leaves-what-was-settled ()
+  "Copying twice costs nothing, and copying onto a tidied heading does not
+undo the tidying."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\n* NEXT Two\n:PROPERTIES:\n:ID: B\n:END:\n"))
+           (a (org-upwell-test--marker-at-id file "A"))
+           (b (org-upwell-test--marker-at-id file "B")))
+      (dolist (name '("keep.txt" "drop.txt" "new.txt"))
+        (org-upwell-claim (org-upwell-save (list :url (concat "https://x/" name)
+                                                 :name name))
+                          "A" 'confirmed))
+      ;; B has already said yes to one and no to another
+      (org-upwell-claim (org-upwell-find :name "keep.txt") "B" 'confirmed)
+      (org-upwell-reject (org-upwell-find :name "drop.txt") "B")
+      (org-with-point-at b
+        (should (= 1 (org-upwell-copy-from a))))
+      (let ((m (lambda (name) (org-upwell-claim-status
+                               (plist-get (org-upwell-find :name name) :claims)
+                               "B"))))
+        (should (eq 'confirmed (funcall m "keep.txt")))
+        (should (eq 'rejected (funcall m "drop.txt")))
+        (should (eq 'provisional (funcall m "new.txt"))))
+      ;; and again is a no-op
+      (org-with-point-at b
+        (should (= 0 (org-upwell-copy-from a)))))))
+
+(ert-deftest org-upwell-test-copy-from-refuses-this-heading ()
+  "Copying a heading onto itself is not a thing somebody meant to ask for."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\n"))
+           (a (org-upwell-test--marker-at-id file "A")))
+      (org-with-point-at a
+        (should-error (org-upwell-copy-from a) :type 'user-error)))))
 
 (ert-deftest org-upwell-test-bench-split-side-follows-the-host-width ()
   "Side by side only where Emacs itself would split side by side."
@@ -2266,6 +2327,309 @@ few noisy ones."
         (should (member "経費" names))
         ;; not chosen, not touched
         (should (member "見積比較 - 社内用" names))))))
+
+;;;; Where the work is done
+
+(ert-deftest org-upwell-test-the-work-is-where-it-was-said-to-be ()
+  "Marked wins over guessed, and which way the answer came is part of the
+answer -- a heading whose downloads have piled up guesses the download
+directory, and whatever asks has to be able to say so."
+  (org-upwell-test--with-dir
+    (let* ((acme (expand-file-name "project/acme" dir))
+           (down (expand-file-name "Downloads" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory acme t)
+      (make-directory down t)
+      ;; nothing to go on
+      (should-not (org-upwell-working-directory (org-upwell-domain mk)))
+      ;; two files in acme, three in Downloads: the count decides
+      (dolist (spec (list (cons acme "a.txt") (cons acme "b.txt")
+                          (cons down "c.txt") (cons down "d.txt")
+                          (cons down "e.txt")))
+        (let ((p (expand-file-name (cdr spec) (car spec))))
+          (write-region "x" nil p)
+          (org-upwell-claim (org-upwell-save (list :path p)) "T1" 'confirmed)))
+      (should (equal (cons down 'guessed)
+                     (org-upwell-working-directory (org-upwell-domain mk))))
+      ;; said out loud, and the count stops mattering
+      (org-with-point-at mk
+        (org-entry-put (point) "UPWELL_DIR" acme))
+      (should (equal (cons acme 'marked)
+                     (org-upwell-working-directory (org-upwell-domain mk)))))))
+
+(ert-deftest org-upwell-test-the-place-is-inherited ()
+  "Written on a project, it answers for every task under it.  That is the
+whole reason it lives on the heading rather than in the store."
+  (org-upwell-test--with-dir
+    (let* ((acme (expand-file-name "project/acme" dir))
+           (file (org-upwell-test--write-journal
+                  (concat "* Project\n:PROPERTIES:\n:ID: P\n:UPWELL_DIR: "
+                          acme "\n:END:\n"
+                          "** NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))))
+      (make-directory acme t)
+      (should (equal (cons acme 'marked)
+                     (org-upwell-working-directory
+                      (org-upwell-domain
+                       (org-upwell-test--marker-at-id file "T1"))))))))
+
+(ert-deftest org-upwell-test-work-here-needs-a-directory ()
+  "It writes where the work is done.  A file is not a where."
+  (org-upwell-test--with-dir
+    (let* ((sub (expand-file-name "acme" dir))
+           (sheet (expand-file-name "quote.csv" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory sub t)
+      (write-region "x" nil sheet)
+      (dolist (p (list sub sheet))
+        (org-upwell-claim (org-upwell-save (list :path p)) "T1" 'confirmed))
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "quote.csv" nil t))
+        (beginning-of-line)
+        (should-error (org-upwell-bench-work-here) :type 'user-error)
+        (goto-char (point-min))
+        (should (search-forward "acme" nil t))
+        (beginning-of-line)
+        (org-upwell-bench-work-here))
+      (should (equal (cons sub 'marked)
+                     (org-upwell-working-directory (org-upwell-domain mk)))))))
+
+(ert-deftest org-upwell-test-a-move-never-writes-over-anything ()
+  "The one thing this package does to a file rather than about it.  A name
+already taken at the far end is a different document with the same name,
+and choosing which of them survives is not a thing a listing gets to do."
+  (org-upwell-test--with-dir
+    (let* ((acme (expand-file-name "acme" dir))
+           (down (expand-file-name "Downloads" dir))
+           (from (expand-file-name "quote.csv" down))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (make-directory acme t)
+      (make-directory down t)
+      (write-region "from" nil from)
+      (write-region "already here" nil (expand-file-name "quote.csv" acme))
+      (org-with-point-at mk (org-entry-put (point) "UPWELL_DIR" acme))
+      (org-upwell-claim (org-upwell-save (list :path from)) "T1" 'confirmed)
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "quote.csv" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+          (should-error (org-upwell-bench-move-here) :type 'user-error)))
+      ;; both are still there, and neither was touched
+      (should (equal "from" (with-temp-buffer (insert-file-contents from)
+                                              (buffer-string))))
+      (should (equal "already here"
+                     (with-temp-buffer
+                       (insert-file-contents (expand-file-name "quote.csv" acme))
+                       (buffer-string)))))))
+
+(ert-deftest org-upwell-test-a-move-takes-the-record-with-it ()
+  "Moved, and the store follows -- or the next resolve calls it stale and
+goes looking for it."
+  (org-upwell-test--with-dir
+    (let* ((acme (expand-file-name "acme" dir))
+           (down (expand-file-name "Downloads" dir))
+           (from (expand-file-name "quote.csv" down))
+           (to (expand-file-name "quote.csv" acme))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file))
+           (asked nil))
+      (make-directory acme t)
+      (make-directory down t)
+      (write-region "x" nil from)
+      (org-with-point-at mk (org-entry-put (point) "UPWELL_DIR" acme))
+      (org-upwell-claim (org-upwell-save (list :path from)) "T1" 'confirmed)
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "quote.csv" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'y-or-n-p)
+                   (lambda (prompt) (setq asked prompt) t)))
+          (org-upwell-bench-move-here)))
+      (should asked)
+      ;; asked before doing it, and did not call a marked place a guess
+      (should-not (string-search "guessed" asked))
+      (should (file-exists-p to))
+      (should-not (file-exists-p from))
+      (let ((m (org-upwell-find :path to)))
+        (should m)
+        (should (equal (list :kind 'path :value to) (org-upwell-resolve m)))))))
+
+(ert-deftest org-upwell-test-a-move-with-nowhere-to-go-moves-nothing ()
+  "No marked place, and nothing to guess from but the file itself -- which
+would guess the directory it is already in."
+  (org-upwell-test--with-dir
+    (let* ((from (expand-file-name "quote.csv" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--heading-marker file)))
+      (write-region "x" nil from)
+      (org-upwell-claim (org-upwell-save (list :path from)) "T1" 'confirmed)
+      (org-upwell--bench-draw (org-upwell-domain mk))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (search-forward "quote.csv" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+          (should-error (org-upwell-bench-move-here) :type 'user-error)))
+      (should (file-exists-p from)))))
+
+;;;; The family, as a grid
+
+(defun org-upwell-test--family ()
+  "Write a project with three tasks and one sub-task.  Return the file."
+  (org-upwell-test--write-journal
+   (concat "* Project\n:PROPERTIES:\n:ID: P\n:END:\n"
+           "** NEXT First\n:PROPERTIES:\n:ID: A\n:END:\n"
+           "*** NEXT Under first\n:PROPERTIES:\n:ID: A1\n:END:\n"
+           "** NEXT Second\n:PROPERTIES:\n:ID: B\n:END:\n"
+           "* Elsewhere\n:PROPERTIES:\n:ID: X\n:END:\n")))
+
+(defun org-upwell-test--claim-to (spec ids status)
+  "Save SPEC and claim it to each of IDS at STATUS.  Return the item.
+
+Threaded, because the claims written are the ones on the item handed in:
+claiming the same thing twice from the same plist drops the first."
+  (let ((m (org-upwell-save spec)))
+    (dolist (id ids m)
+      (setq m (org-upwell-claim m id status)))))
+
+(ert-deftest org-upwell-test-the-family-is-the-parent-not-the-heading ()
+  "Standing on a leaf and asking about its own subtree gives one column,
+which is a list.  The question is what it was continued from."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (should (equal '("Project" "NEXT First" "NEXT Under first" "NEXT Second")
+                     (mapcar (lambda (c) (nth 2 c))
+                             (org-upwell-matrix--headings
+                              (org-upwell-matrix--root
+                               (org-upwell-test--marker-at-id file "B"))))))
+      ;; on a top-level heading there is no parent, so it is its own family
+      (should (equal '("Project" "NEXT First" "NEXT Under first" "NEXT Second")
+                     (mapcar (lambda (c) (nth 2 c))
+                             (org-upwell-matrix--headings
+                              (org-upwell-matrix--root
+                               (org-upwell-test--marker-at-id file "P")))))))))
+
+(ert-deftest org-upwell-test-a-cell-says-what-the-claim-is ()
+  "`×\=' is an answer somebody gave, `·\=' a proposal nobody has looked at, and
+a refusal is not a claim on the heading at all."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "kept")
+                                 '("A") 'confirmed)
+      (org-upwell-test--claim-to (list :url "https://x/b" :name "proposed")
+                                 '("B") 'provisional)
+      (org-upwell-reject (org-upwell-test--claim-to
+                          (list :url "https://x/c" :name "refused")
+                          '("A") 'confirmed)
+                         "B")
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let ((text (substring-no-properties (buffer-string))))
+          ;; columns are 1 Project, 2 First, 3 Under first, 4 Second
+          (should (string-match-p "kept.*  × *$" (car (seq-filter
+                                                       (lambda (l) (string-search "kept" l))
+                                                       (split-string text "\n")))))
+          (should (string-match-p "proposed.* · *$"
+                                  (car (seq-filter
+                                        (lambda (l) (string-search "proposed" l))
+                                        (split-string text "\n")))))
+          ;; refused on B, kept on A: one mark, and it is not under Second
+          (let ((line (car (seq-filter (lambda (l) (string-search "refused" l))
+                                       (split-string text "\n")))))
+            (should (= 1 (seq-count (lambda (c) (memq c '(?× ?·))) line)))))))))
+
+(ert-deftest org-upwell-test-unlinking-a-cell-leaves-the-other-columns ()
+  "What is wrong in a family is one heading holding something, not the
+thing being wrong."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "shared")
+                                 '("A" "B") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (search-forward "shared" nil t))
+        (beginning-of-line)
+        ;; onto the grid, column 4 (Second)
+        (let* ((widths (org-upwell-matrix--widths
+                        org-upwell-matrix--rows org-upwell-matrix--columns
+                        (org-upwell-matrix--width)))
+               (left (+ 2 6 2 (car widths) 2 (cdr widths) 2)))
+          (move-to-column (+ left 6))
+          (should (equal "NEXT Second" (nth 2 (org-upwell-matrix--grid-column))))
+          (org-upwell-matrix-unlink)))
+      (let ((m (org-upwell-find :name "shared")))
+        (should (eq 'confirmed (org-upwell-claim-status (plist-get m :claims) "A")))
+        (should-not (org-upwell-claim-status (plist-get m :claims) "B"))))))
+
+(ert-deftest org-upwell-test-a-column-can-be-copied-onto-another ()
+  "The move that made this buffer necessary, and the one that makes a mess
+of it, asked the way a grid makes natural."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "one")
+                                 '("A") 'confirmed)
+      (org-upwell-test--claim-to (list :url "https://x/b" :name "two")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (search-forward "one" nil t))
+        (beginning-of-line)
+        (let* ((widths (org-upwell-matrix--widths
+                        org-upwell-matrix--rows org-upwell-matrix--columns
+                        (org-upwell-matrix--width)))
+               (left (+ 2 6 2 (car widths) 2 (cdr widths) 2)))
+          ;; standing on column 2 (First), copy onto column 4 (Second)
+          (move-to-column (+ left 2))
+          (should (equal "NEXT First" (nth 2 (org-upwell-matrix--grid-column))))
+          (org-upwell-matrix-copy-column 4)))
+      (dolist (name '("one" "two"))
+        (should (eq 'provisional
+                    (org-upwell-claim-status
+                     (plist-get (org-upwell-find :name name) :claims) "B")))))))
+
+(ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
+  "Titles as column headers fit six or eight, cut to four characters each,
+which is not a word.  Numbers fit twenty -- and past nine a single digit
+cannot say which of 1 and 11 it is, so the ruler grows a second line."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--write-journal
+                 (concat "* Project\n:PROPERTIES:\n:ID: P\n:END:\n"
+                         (mapconcat
+                          (lambda (i)
+                            (format "** NEXT Task %d\n:PROPERTIES:\n:ID: T%d\n:END:\n" i i))
+                          (number-sequence 1 19) "")))))
+      ;; a real path, so the where column has something to want: uncapped it
+      ;; would take the room the grid needs
+      (org-upwell-test--claim-to
+       (list :path (expand-file-name "a/deep/tree/of/directories/a.pptx" dir)
+             :name "a document")
+       '("T1" "T19") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "P"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let ((lines (split-string (substring-no-properties (buffer-string)) "\n")))
+          (should (= 20 (length org-upwell-matrix--columns)))
+          (dolist (line lines)
+            (should (<= (string-width line) 80)))
+          ;; two ruler lines, the tens over the units
+          (let ((units (seq-position lines nil
+                                     (lambda (l _)
+                                       (string-match-p "1 2 3 4 5 6 7 8 9 0" l)))))
+            (should units)
+            (should (string-match-p "1 1 1 1" (nth (1- units) lines)))))))))
 
 (provide 'org-upwell-test)
 

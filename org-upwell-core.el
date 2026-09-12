@@ -292,6 +292,107 @@ a wait."
               (delq nil (mapcar (lambda (d) (and d (expand-file-name d)))
                                 org-upwell-search-roots))))
 
+(defun org-upwell--command-key (command)
+  "The key COMMAND is on in this buffer, or nil when it is on none.
+
+`substitute-command-keys\=' answers with \\[execute-extended-command] and
+the name where nothing is bound, which is how an unbound one is known."
+  (let ((keys (substitute-command-keys (format "\\[%s]" command))))
+    (unless (string-prefix-p "M-x " keys) keys)))
+
+(defun org-upwell--legend (commands width headings &optional tail)
+  "The foot of a listing: what can be done from here, and which key does it.
+
+COMMANDS is a list of (COMMAND SCOPE WHAT).  HEADINGS is an alist of
+(SCOPE LONG SHORT) giving the line above each group, long or short by
+whether the long one fits.  TAIL is candidate closing lines, longest
+first; the longest that fits is used.
+
+WIDTH is the columns available.  Two pairs of key and text sit side by
+side when they fit, one column when they do not -- these buffers truncate
+rather than wrap, so a line too long for the window is not a line that
+wraps, it is a line whose end nobody ever sees.
+
+The keys come from the keymap rather than from a table here, because a
+configuration is expected to move them and a printed key would then be a
+printed lie at the foot of every listing."
+  (let* ((rows (mapcar (pcase-lambda (`(,command ,scope ,what))
+                         (list scope
+                               (or (org-upwell--command-key command) "")
+                               what))
+                       commands))
+         (keyw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 1 r))) rows)))
+         (whatw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 2 r))) rows)))
+         (cell (+ 4 keyw 2 whatw))
+         (pairs (if (>= width (+ (* 2 cell) 2)) 2 1))
+         (out ""))
+    (pcase-dolist (`(,scope ,heading ,short) headings)
+      (let ((group (seq-filter (lambda (r) (eq (nth 0 r) scope)) rows)))
+        (when group
+          (setq out (concat out
+                            (propertize
+                             (format "%s\n" (if (<= (string-width heading) width)
+                                                heading short))
+                             'face 'shadow)))
+          ;; Down the first column and then down the second, so the eye
+          ;; reads a column rather than hopping across a row.
+          (let* ((n (length group))
+                 (per (if (= pairs 2) (/ (+ n 1) 2) n)))
+            (dotimes (i per)
+              (let ((line ""))
+                (dotimes (c pairs)
+                  (when-let ((r (nth (+ i (* c per)) group)))
+                    (setq line
+                          (concat line
+                                  (format (format "    %%-%ds  " keyw) (nth 1 r))
+                                  (propertize
+                                   (format (format "%%-%ds" whatw) (nth 2 r))
+                                   'face 'shadow)))))
+                (setq out (concat out (string-trim-right line) "\n"))))))))
+    (if (null tail)
+        out
+      (concat out
+              (propertize
+               (concat (seq-find (lambda (line) (<= (string-width line) width))
+                                 tail "")
+                       "\n")
+               'face 'shadow)))))
+
+(defun org-upwell-working-directory (domain)
+  "Where DOMAIN\='s work is done: (DIRECTORY . marked) or (DIRECTORY . guessed).
+
+Nil when there is nothing to say.
+
+Marked wins.  `:UPWELL_DIR:\=' on the heading is the answer somebody gave,
+it is inherited, so writing it once on a project answers for every task
+under it -- and it is the same property `org-upwell-create\=' already puts
+new files in, because those are one fact and not two.
+
+Guessed otherwise, from where this heading\='s files already are: the
+directory holding the most of them.  Free, and right often enough to
+offer -- but it is a count, and a heading whose downloads have piled up
+answers with the download directory.  So which way the answer came is
+part of the answer, and whatever asks has to be able to say so."
+  (let ((marked (plist-get domain :dir)))
+    (cond
+     ((and marked (not (string-empty-p marked)))
+      (cons (directory-file-name (expand-file-name marked)) 'marked))
+     (t
+      (let ((counts (make-hash-table :test 'equal))
+            best best-n)
+        (dolist (m (plist-get domain :items))
+          (let ((path (plist-get m :path)))
+            (when (and path (not (org-upwell-directory-item-p m)))
+              (let ((dir (directory-file-name
+                          (file-name-directory
+                           (directory-file-name path)))))
+                (puthash dir (1+ (gethash dir counts 0)) counts)))))
+        (maphash (lambda (dir n)
+                   (when (or (null best-n) (> n best-n))
+                     (setq best dir best-n n)))
+                 counts)
+        (and best (cons best 'guessed)))))))
+
 (defun org-upwell-kind (item)
   "Return \"dir\" or \"file\" for ITEM.
 
@@ -694,7 +795,12 @@ them, so the last claim can actually be taken off."
   "Claim ITEM to HEADING-ID at STATUS.  Return the saved item.
 
 Confirmed is sticky: a later provisional write for the same heading does
-not undo a person having said this belongs there."
+not undo a person having said this belongs there.
+
+The claims written are the ones on ITEM, so claiming the same thing to a
+second heading has to be handed what the first call returned.  Passing
+the plist again drops the claim in between, silently -- everything here
+re-reads before claiming, which is why nothing has been bitten by it."
   (let* ((m (if (plist-get item :id) item (org-upwell-save item)))
          (claims (org-upwell-claims-put (plist-get m :claims)
                                         heading-id status)))
@@ -764,8 +870,10 @@ what stops the intersection asking twice, not a file to open."
 (defun org-upwell-heading-id (&optional marker)
   "Return (creating if needed) the org-id of the user heading at MARKER.
 
-This is the only write this package makes into the user's work files:
-an id, so a claim can survive refile.  They already use ids for links."
+One of the two writes this package makes into the user's work files: an
+id, so a claim can survive refile.  They already use ids for links.  The
+other is `:UPWELL_DIR:\=', which says where the work is done -- and both
+happen only where somebody asked for something that needs them."
   (org-with-point-at (or marker (point))
     (org-back-to-heading t)
     (org-id-get-create)))

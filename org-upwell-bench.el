@@ -23,6 +23,10 @@
 (require 'org-upwell-core)
 (require 'org-upwell-pin)
 (require 'org-upwell-claim)
+
+;; The grid requires this file, so this file only names it.  The legend below
+;; lists it as a command the bench can reach, which is a symbol and not a call.
+(declare-function org-upwell-matrix "org-upwell-matrix" (&optional marker choose))
 (require 'seq)
 (require 'cl-lib)
 (require 'button)
@@ -726,6 +730,14 @@ and the rest is slack for the two flags a row may carry."
                                items))))
     (cons name (max 12 (min asked (- total name 45))))))
 
+(defun org-upwell--working-here-p (item domain)
+  "Return `marked\=', `guessed\=' or nil for ITEM as DOMAIN\='s working directory."
+  (when (org-upwell-directory-item-p item)
+    (when-let ((where (org-upwell-working-directory domain))
+               (path (plist-get item :path)))
+      (and (equal (directory-file-name path) (car where))
+           (cdr where)))))
+
 (defun org-upwell--copy-of (item items)
   "Return the item among ITEMS that ITEM is a local copy of, or nil.
 
@@ -785,7 +797,17 @@ across the break."
       (let ((these (seq-filter wanted items)))
         (if (null these)
             (insert (propertize "  (none)\n" 'face 'shadow))
-          (dolist (m (org-upwell--bench-order these))
+          ;; The place the work is done goes to the top of its section: it is
+          ;; the row somebody goes to over and over, and a row that moves is
+          ;; a row that has to be looked for.
+          (dolist (m (org-upwell--bench-order
+                      (append
+                       (seq-filter (lambda (m)
+                                     (org-upwell--working-here-p m domain))
+                                   these)
+                       (seq-remove (lambda (m)
+                                     (org-upwell--working-here-p m domain))
+                                   these))))
             (org-upwell--bench-insert-item m domain widths)))))))
 
 (defun org-upwell--bench-insert-item (m domain widths)
@@ -842,7 +864,13 @@ across the break."
            (propertize "  copy"
                        'face 'shadow
                        'help-echo "the same document as the row above")
-         ""))))
+         "")
+       (pcase (org-upwell--working-here-p m domain)
+         ('marked (propertize "  main" 'face 'shadow
+                              'help-echo "where this heading's work is done"))
+         ('guessed (propertize "  main?" 'face 'shadow
+                               'help-echo "guessed from where its files are"))
+         (_ "")))))
     (insert "\n")
     (put-text-property start (1- (point)) 'org-upwell m)))
 
@@ -1222,6 +1250,105 @@ somebody reading it."
        (message "org-upwell: %d name%s shortened" n (if (= n 1) "" "s"))
        n))))
 
+;;;###autoload
+(defun org-upwell-copy-from (from)
+  "Copy another heading's items onto this one, provisionally.
+
+The shape GTD keeps making: the next task is the last one continued, and
+it wants the same three files.  Bringing the set over and dropping what
+does not belong is fewer decisions than finding each of them again.
+
+FROM is read from the same list \[org-upwell-bench] offers.  What this
+heading has already settled -- kept or rejected -- is left alone, so
+copying twice costs nothing and copying onto a tidied heading does not
+undo the tidying."
+  (interactive (list (org-upwell--read-heading-marker)))
+  (let* ((to (or (and (derived-mode-p 'org-upwell-bench-mode)
+                      org-upwell-bench-domain
+                      (plist-get org-upwell-bench-domain :marker))
+                 (org-upwell--current-heading-marker)
+                 (user-error "No heading to copy onto")))
+         (from-id (org-upwell-heading-id from))
+         (to-id (org-upwell-heading-id to)))
+    (when (equal from-id to-id)
+      (user-error "That is this heading"))
+    (let ((n (org-upwell-inherit-to-heading from-id to-id)))
+      (when (derived-mode-p 'org-upwell-bench-mode)
+        (org-upwell--bench-redraw))
+      (message "org-upwell: %d copied from \"%s\"" n
+               (org-with-point-at from (org-get-heading t t t t)))
+      n)))
+
+(defun org-upwell-bench-work-here ()
+  "Say that this row\='s directory is where this heading\='s work is done.
+
+Writes `:UPWELL_DIR:\=' on the heading, which is inherited -- put it on a
+project and every task under it answers the same way -- and which is also
+where `org-upwell-create\=' puts a new file.  One fact, not two.
+
+Without it the bench guesses, from where this heading\='s files already
+are.  The guess is free and often right, and it is a count: a heading
+whose downloads have piled up guesses the download directory.  This is
+how to settle it."
+  (interactive)
+  (let* ((m (or (org-upwell--bench-item-at-point)
+                (user-error "No item on this line")))
+         (marker (plist-get org-upwell-bench-domain :marker)))
+    (unless (org-upwell-directory-item-p m)
+      (user-error "org-upwell: %s is not a directory" (plist-get m :name)))
+    (let ((dir (file-name-as-directory
+                (or (plist-get m :path)
+                    (user-error "org-upwell: no path for %s"
+                                (plist-get m :name))))))
+      (org-with-point-at marker
+        (org-back-to-heading t)
+        (org-entry-put (point) "UPWELL_DIR" (abbreviate-file-name dir)))
+      (org-upwell--bench-redraw)
+      (message "org-upwell: work here -- %s" (abbreviate-file-name dir)))))
+
+(defun org-upwell-bench-move-here ()
+  "Move this row\='s file into the directory the work is done in.
+
+The one thing this package does to a file rather than about it, so it
+asks first, and it never writes over anything: a name already taken at
+the far end is a different document with the same name, and choosing
+which of them survives is not a thing a file listing gets to do.
+
+Where it goes is `org-upwell-working-directory\='.  When that was guessed
+rather than marked, the question says so -- \[org-upwell-bench-work-here]
+settles it."
+  (interactive)
+  (let* ((m (or (org-upwell--bench-item-at-point)
+                (user-error "No item on this line")))
+         (where (or (org-upwell-working-directory org-upwell-bench-domain)
+                    (user-error "org-upwell: nowhere to move to; %s"
+                                (substitute-command-keys
+                                 "\\[org-upwell-bench-work-here] on a directory says where"))))
+         (dir (file-name-as-directory (car where)))
+         (app (org-upwell-resolve m))
+         (from (and (eq (plist-get app :kind) 'path) (plist-get app :value))))
+    (unless from
+      (user-error "org-upwell: %s is not a file on this machine"
+                  (plist-get m :name)))
+    (when (org-upwell-directory-item-p m)
+      (user-error "org-upwell: %s is a directory" (plist-get m :name)))
+    (let ((to (expand-file-name (file-name-nondirectory from) dir)))
+      (when (equal (file-truename from) (file-truename to))
+        (user-error "org-upwell: already there"))
+      (when (file-exists-p to)
+        (user-error "org-upwell: %s is taken" (abbreviate-file-name to)))
+      (unless (file-directory-p dir)
+        (user-error "org-upwell: no such directory: %s"
+                    (abbreviate-file-name dir)))
+      (when (y-or-n-p (format "Move %s to %s%s? "
+                              (file-name-nondirectory from)
+                              (abbreviate-file-name dir)
+                              (if (eq (cdr where) 'guessed) " (guessed)" "")))
+        (rename-file from to)
+        (org-upwell-save (list :id (plist-get m :id) :path to :stale nil))
+        (org-upwell--bench-redraw)
+        (message "org-upwell: moved to %s" (abbreviate-file-name dir))))))
+
 (defun org-upwell-bench-pin-directory ()
   "Keep the place this row lives in, as an item of its own.
 
@@ -1299,6 +1426,8 @@ is: the two things the row had to shorten."
     (org-upwell-bench-open-in-emacs    row  "open in Emacs")
     (org-upwell-open-directory         row  "go to its place")
     (org-upwell-bench-pin-directory    row  "keep its place")
+    (org-upwell-bench-work-here        row  "work here")
+    (org-upwell-bench-move-here        row  "move it here")
     (org-upwell-bench-toggle-mark      row  "mark, move down")
     (org-upwell-bench-unmark           row  "unmark, move up")
     (org-upwell-bench-keep             row  "keep it here")
@@ -1312,6 +1441,8 @@ is: the two things the row had to shorten."
     (org-upwell-bench-redraw           page "read the store")
     (org-upwell-bench-add-file         page "add a file")
     (org-upwell-bench-add-url          page "add a URL")
+    (org-upwell-copy-from              page "copy from")
+    (org-upwell-matrix                 page "the family")
     (org-upwell-visit-store            page "the store file")
     (org-upwell-bench-quit             page "hide the bench"))
   "What the foot of the bench names: (COMMAND SCOPE WHAT).
@@ -1326,69 +1457,23 @@ WHAT is held to 15 columns.  The bench is half a window wide; two of
 these pairs have to sit side by side in it, and the layout falls back to
 one column when even that will not fit.")
 
-(defun org-upwell--bench-command-key (command)
-  "The key COMMAND is on in this buffer, or nil when it is on none.
-
-`substitute-command-keys\=' answers with \\[execute-extended-command] and
-the name where nothing is bound, which is how an unbound one is known."
-  (let ((keys (substitute-command-keys (format "\\[%s]" command))))
-    (unless (string-prefix-p "M-x " keys) keys)))
+(define-obsolete-function-alias 'org-upwell--bench-command-key
+  'org-upwell--command-key "0.3")
 
 (defun org-upwell--bench-legend (&optional width)
   "The foot of the bench: what can be done from here, and which key does it.
 
 WIDTH is the columns available, defaulting to this buffer's window."
-  (let* ((width (or width
-                    (let ((win (get-buffer-window (current-buffer) nil)))
-                      (if (window-live-p win) (window-body-width win)
-                        (frame-width)))))
-         (rows (mapcar (pcase-lambda (`(,command ,scope ,what))
-                         (list scope
-                               (or (org-upwell--bench-command-key command) "")
-                               what))
-                       org-upwell-bench-commands))
-         (keyw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 1 r))) rows)))
-         (whatw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 2 r))) rows)))
-         (cell (+ 4 keyw 2 whatw))
-         (pairs (if (>= width (+ (* 2 cell) 2)) 2 1))
-         (out ""))
-    (pcase-dolist (`(,scope ,heading ,short)
-                   '((row "on this line, or the marked ones"
-                          "this line, or the marked")
-                     (page "on the bench" "on the bench")))
-      (let ((group (seq-filter (lambda (r) (eq (nth 0 r) scope)) rows)))
-        (setq out (concat out
-                          (propertize
-                           (format "%s\n" (if (<= (string-width heading) width)
-                                              heading short))
-                           'face 'shadow)))
-        ;; Down the first column and then down the second, so the eye
-        ;; reads a column rather than hopping across a row.
-        (let* ((n (length group))
-               (per (if (= pairs 2) (/ (+ n 1) 2) n)))
-          (dotimes (i per)
-            (let ((line ""))
-              (dotimes (c pairs)
-                (when-let ((r (nth (+ i (* c per)) group)))
-                  (setq line
-                        (concat line
-                                (format (format "    %%-%ds  " keyw) (nth 1 r))
-                                (propertize
-                                 (format (format "%%-%ds" whatw) (nth 2 r))
-                                 'face 'shadow)))))
-              (setq out (concat out (string-trim-right line) "\n")))))))
-    ;; The longest of these that fits.  The bench truncates rather than
-    ;; wraps, so a line too long for the window is not a line that wraps --
-    ;; it is a line whose end nobody ever sees.
-    (concat out
-            (propertize
-             (concat (seq-find (lambda (line) (<= (string-width line) width))
-                               '("Drop a file or URL here to pin it to this heading."
-                                 "Drop a file or URL here to pin it."
-                                 "Drop here to pin.")
-                               "")
-                     "\n")
-             'face 'shadow))))
+  (org-upwell--legend
+   org-upwell-bench-commands
+   (or width
+       (let ((win (get-buffer-window (current-buffer) nil)))
+         (if (window-live-p win) (window-body-width win) (frame-width))))
+   '((row "on this line, or the marked ones" "this line, or the marked")
+     (page "on the bench" "on the bench"))
+   '("Drop a file or URL here to pin it to this heading."
+     "Drop a file or URL here to pin it."
+     "Drop here to pin.")))
 
 (defvar org-upwell-bench-mode-map (make-sparse-keymap))
 (let ((map org-upwell-bench-mode-map))
@@ -1403,6 +1488,10 @@ WIDTH is the columns available, defaulting to this buffer's window."
   (define-key map (kbd "e") #'org-upwell-bench-open-in-emacs)
   (define-key map (kbd "^") #'org-upwell-open-directory)
   (define-key map (kbd "P") #'org-upwell-bench-pin-directory)
+  (define-key map (kbd "y") #'org-upwell-copy-from)
+  (define-key map (kbd "W") #'org-upwell-bench-work-here)
+  (define-key map (kbd "M") #'org-upwell-bench-move-here)
+  (define-key map (kbd "T") #'org-upwell-matrix)
   (define-key map (kbd "RET") #'org-upwell-bench-open-at-point)
   (define-key map (kbd "a") #'org-upwell-bench-open-all)
   (define-key map (kbd "x") #'org-upwell-bench-open-marked)
