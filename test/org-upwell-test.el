@@ -2328,6 +2328,82 @@ few noisy ones."
         ;; not chosen, not touched
         (should (member "見積比較 - 社内用" names))))))
 
+(ert-deftest org-upwell-test-a-tidy-can-be-put-back ()
+  "Nothing is learned and nothing is stored, so the only lasting effect is
+the names -- which makes putting them back the whole of \"correcting the
+result\".  The moment it matters is the look at the bench straight after."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3)
+          (org-upwell-tidy--last nil))
+      (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                      "社内ポータル - 経費" "見積比較 - 社内用"))
+        (org-upwell-save (list :name name :url (concat "https://x/" name))))
+      (cl-letf (((symbol-function 'completing-read-multiple)
+                 (lambda (&rest _) (list "start    3  社内ポータル - "))))
+        (org-upwell-tidy-names))
+      (should (member "規定集" (mapcar (lambda (m) (plist-get m :name))
+                                       (org-upwell-items))))
+      ;; the prefix argument puts back exactly what was changed
+      (should (= 3 (org-upwell-tidy-names t)))
+      (let ((names (mapcar (lambda (m) (plist-get m :name))
+                           (org-upwell-items))))
+        (should (member "社内ポータル - 規定集" names))
+        (should (member "社内ポータル - 出張申請" names))
+        (should (member "社内ポータル - 経費" names))
+        (should (member "見積比較 - 社内用" names))
+        (should-not (member "規定集" names)))
+      ;; and there is nothing left to put back twice
+      (should-error (org-upwell-tidy-names t) :type 'user-error))))
+
+(ert-deftest org-upwell-test-a-tidy-hands-back-the-rule ()
+  "The durable thing this command produces is the regexp that strips the
+same run from every future sighting.  Announced per affix inside the loop,
+it was erased by the next iteration and then by the closing count -- so it
+has to be said once, at the end."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3)
+          (org-upwell-tidy--last nil)
+          calls)
+      (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                      "社内ポータル - 経費"))
+        (org-upwell-save (list :name name :url (concat "https://x/" name))))
+      (cl-letf (((symbol-function 'completing-read-multiple)
+                 (lambda (&rest _) (list "start    3  社内ポータル - ")))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (and fmt (apply #'format fmt args)) calls))))
+        (org-upwell-tidy-names))
+      ;; The *last* message, because that is the one still on screen.  Saving
+      ;; the store calls `(message nil)', which clears the echo area, so a
+      ;; message said from inside `org-upwell-with-store' is erased the moment
+      ;; the macro returns.
+      (let ((said (car calls)))
+        (should said)
+        (should (string-match-p "org-upwell-title-noise" said))
+        (should (string-match-p (regexp-quote "\\\\`社内ポータル") said))
+        ;; and the way back is named where it is needed
+        (should (string-match-p "puts them back" said))))))
+
+(ert-deftest org-upwell-test-a-pinned-title-is-stripped-like-a-sighting ()
+  "A URL caught from a browser carries the browser\='s name in its title, and
+identity is exact: a name that differs from the one a sighting would have
+written makes one document into two rows that never meet."
+  (org-upwell-test--with-dir
+    (let ((m (org-upwell-pin-url "https://example.com/a"
+                                 "Vendor day deck - Microsoft Edge")))
+      (should (equal "Vendor day deck" (plist-get m :name))))))
+
+(ert-deftest org-upwell-test-tidy-is-on-a-key-in-both-listings ()
+  "A name carrying the intranet\='s own name is wrong on whichever listing it
+is read from, so it is the same key on both."
+  (should (eq 'org-upwell-tidy-names
+              (lookup-key org-upwell-bench-mode-map (kbd "N"))))
+  (should (eq 'org-upwell-tidy-names
+              (lookup-key org-upwell-matrix-mode-map (kbd "N"))))
+  (dolist (registry (list org-upwell-bench-commands
+                          org-upwell-matrix-commands))
+    (should (assq 'org-upwell-tidy-names registry))))
+
 ;;;; Where the work is done
 
 (ert-deftest org-upwell-test-the-work-is-where-it-was-said-to-be ()

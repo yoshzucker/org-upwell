@@ -22,6 +22,7 @@
 (require 'org-clock)
 (require 'org-protocol)
 (require 'org-upwell-core)
+(require 'org-upwell-trace)
 (require 'dnd)
 (require 'seq)
 
@@ -104,11 +105,18 @@ URL; there is nothing to catch otherwise."
     saved))
 
 (defun org-upwell-pin-url (url &optional title)
-  "Catch URL.  TITLE is used as the name when given."
+  "Catch URL.  TITLE is used as the name when given.
+
+TITLE goes through `org-upwell--strip-title-noise\\=' just as a title the
+watcher wrote does.  A URL caught from a browser carries the browser\'s own
+name in its title, and a name that differs from the one a sighting of the
+same page would have written makes one document into two rows: identity is
+exact, so the two never meet again."
   (interactive "sURL: ")
-  (let ((saved (org-upwell-pin url nil "pin")))
-    (when (and title (not (string-empty-p title)))
-      (setq saved (org-upwell-save (plist-put (copy-sequence saved) :name title))))
+  (let* ((clean (and title (org-upwell--strip-title-noise title)))
+         (saved (org-upwell-pin url nil "pin")))
+    (when (and clean (not (string-empty-p clean)))
+      (setq saved (org-upwell-save (plist-put (copy-sequence saved) :name clean))))
     saved))
 
 (defun org-upwell-dnd-file (uri _action)

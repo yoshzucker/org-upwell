@@ -293,6 +293,7 @@ grid\", which is true and useless."
     (org-upwell-matrix-rename           row    "rename it")
     (org-upwell-matrix-forget           row    "forget it")
     (org-upwell-matrix-visit-store      row    "the store file")
+    (org-upwell-tidy-names              page   "tidy the names")
     (org-upwell-matrix-redraw           page   "read again")
     (org-upwell-matrix-quit             page   "close"))
   "What the foot of the grid names: (COMMAND SCOPE WHAT).
@@ -611,6 +612,10 @@ The only practical way to read a column two characters wide."
   (define-key map (kbd "<") #'org-upwell-matrix-widen)
   (define-key map (kbd ">") #'org-upwell-matrix-narrow)
   (define-key map (kbd "f") #'org-upwell-matrix-choose)
+  ;; The same key as the bench: a name carrying the intranet's own name is
+  ;; wrong on whichever listing it is read from, and the act is the store\'s,
+  ;; not this buffer\'s.
+  (define-key map (kbd "N") #'org-upwell-tidy-names)
   ;; TAB, because this is the act the agenda puts on TAB: go to the entry and
   ;; leave the listing standing.  `org-upwell-matrix-goto' shows the heading in
   ;; a window that is not this one, which is `org-agenda-goto' exactly.

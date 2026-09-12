@@ -197,29 +197,33 @@ and from after a clock is filled in after the fact.  Traces that sit in
 no interval become unclaimed items, so a file opened off the clock is
 still findable and still a signal."
   (interactive)
-  (org-upwell-with-store
-   (let* ((days (or days 1))
-          (segments (org-upwell-clock-segments days))
-          (from (org-upwell--day-start (1- days)))
-          (to (current-time))
-          (traces (org-upwell-unique-traces
-                   (org-upwell-read-traces from to)))
-          (n 0))
-     (dolist (seg segments)
-       (when (org-upwell-claim-interval
-              (plist-get seg :marker)
-              (plist-get seg :from)
-              (plist-get seg :to)
-              "trace")
-         (setq n (1+ n))))
-     (dolist (tr traces)
-       (let* ((ts-from (seconds-to-time (plist-get tr :ts)))
-              (ts-to (time-add ts-from 1)))
-         (unless (org-upwell--segments-overlapping ts-from ts-to segments)
-           (org-upwell-save (org-upwell-trace-to-spec tr)))))
-     (when (called-interactively-p 'interactive)
-       (message "org-upwell: synced %d interval(s)" n))
-     n)))
+  ;; The count is said after the store is written.  `org-upwell-with-store'
+  ;; saves on the way out and saving clears the echo area, so a message from
+  ;; inside it is a message nobody sees.
+  (let ((n (org-upwell-with-store
+            (let* ((days (or days 1))
+		   (segments (org-upwell-clock-segments days))
+		   (from (org-upwell--day-start (1- days)))
+		   (to (current-time))
+		   (traces (org-upwell-unique-traces
+			    (org-upwell-read-traces from to)))
+		   (n 0))
+	      (dolist (seg segments)
+		(when (org-upwell-claim-interval
+		       (plist-get seg :marker)
+		       (plist-get seg :from)
+		       (plist-get seg :to)
+		       "trace")
+		  (setq n (1+ n))))
+	      (dolist (tr traces)
+		(let* ((ts-from (seconds-to-time (plist-get tr :ts)))
+		       (ts-to (time-add ts-from 1)))
+		  (unless (org-upwell--segments-overlapping ts-from ts-to segments)
+		    (org-upwell-save (org-upwell-trace-to-spec tr)))))
+              n))))
+    (when (called-interactively-p 'interactive)
+      (message "org-upwell: synced %d interval(s)" n))
+    n))
 
 ;;;; Review
 

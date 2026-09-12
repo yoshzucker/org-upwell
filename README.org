@@ -196,12 +196,30 @@ off the end, because nothing tells a profile somebody named apart from the
 last part of a title and a rule that took two would eat real subjects. Edge's
 default =Profile N= is listed by name.
 
-~M-x org-upwell-tidy-names~ finds the rest. A site that prefixes every page
+~N~ on the bench or the grid finds the rest. A site that prefixes every page
 with its own name is not guessable -- it is whatever the intranet in front
 of you calls itself -- so the store is asked instead: runs of text that
 ~org-upwell-tidy-threshold~ names or more share, at either end, offered with
 their counts. Offered, not stripped: losing real words is worse than keeping
 a few noisy ones.
+
+Nothing is learned and nothing is stored. The candidates are counted afresh
+from the store on every call, so there is no model to inspect -- and the two
+things worth having instead are both there. It hands back the **rule**: a
+regexp for ~org-upwell-title-noise~ that strips the same run from every
+future sighting, printed once at the end. And ~C-u N~ puts back the names
+the last call changed, for the look at the bench straight afterwards when a
+word that was part of the name has gone; past that moment ~R~ fixes the one
+name that is wrong.
+
+Both are said after the store is written rather than during. Saving clears
+the echo area, so a message from inside the write reaches =*Messages*= and
+nowhere anybody is looking -- which is what happened to the rule, announced
+once per affix inside the loop where the next iteration erased it.
+
+A URL caught by hand goes through the same strip a sighting does. Identity is
+exact, so a title carrying =- Microsoft Edge= that a sighting would have
+trimmed makes one document into two rows that never meet.
 
 With ~org-upwell-agenda-follow~ on, moving in the agenda redraws the bench
 for the row. Org's own follow (~F~) opens the entry's file in another

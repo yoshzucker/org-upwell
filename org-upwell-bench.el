@@ -1200,7 +1200,36 @@ sighted a hundred times does not look like a hundred documents agreeing."
     (sort out (lambda (a b) (> (cddr a) (cddr b))))))
 
 ;;;###autoload
-(defun org-upwell-tidy-names ()
+(defvar org-upwell-tidy--last nil
+  "What the last `org-upwell-tidy-names\\=' changed, as (ID . OLD-NAME) pairs.
+
+Kept for the session and no longer.  This is for the moment you look at
+the bench after a tidy and see that a word which was part of the name has
+gone; past that moment \\[org-upwell-bench-rename] fixes the one name that
+is wrong, and a record kept in the store would be bookkeeping for an
+operation somebody runs twice a year.")
+
+(defun org-upwell-tidy--restore ()
+  "Put the names the last tidy changed back.  Return how many moved."
+  (unless org-upwell-tidy--last
+    (user-error "org-upwell: no tidy to put back in this session"))
+  ;; Said after the store is written, not inside `org-upwell-with-store':
+  ;; that macro saves the file on the way out, and saving clears the echo
+  ;; area, so a message left inside it reaches `*Messages*' and nowhere a
+  ;; person is looking.
+  (let ((n (org-upwell-with-store
+            (let ((n 0))
+              (pcase-dolist (`(,id . ,name) org-upwell-tidy--last)
+                (when-let ((m (org-upwell-find :id id)))
+                  (unless (equal (plist-get m :name) name)
+                    (org-upwell-save (plist-put (copy-sequence m) :name name))
+                    (setq n (1+ n)))))
+              (setq org-upwell-tidy--last nil)
+              n))))
+    (message "org-upwell: %d name%s put back" n (if (= n 1) "" "s"))
+    n))
+
+(defun org-upwell-tidy-names (&optional undo)
   "Offer the runs of text many stored names share, and strip the chosen ones.
 
 A window title carries whatever the thing that served it calls itself,
@@ -1210,10 +1239,26 @@ are guessable; this finds the ones only your own store knows -- the
 intranet\='s name, the viewer that prefixes every PDF it opens.
 
 Offered rather than stripped.  Losing real words is worse than keeping a
-few noisy ones, which is the same reason `org-upwell-title-noise\=' takes
+few noisy ones, which is the same reason `org-upwell-title-noise\\=' takes
 one segment and not two: nothing tells a subject from a suffix except
-somebody reading it."
-  (interactive)
+somebody reading it.
+
+Nothing is learned and nothing is stored.  The candidates are counted
+afresh from the store on every call, and the only lasting effect is the
+names themselves -- so there is no model to inspect, and the two things
+worth having instead are both here.  What it hands back is the *rule*: a
+regexp for `org-upwell-title-noise\\=' that strips the same run from every
+future sighting, printed at the end where it can be read.  And with UNDO
+\\(a prefix argument) the names the last call changed go back."
+  (interactive "P")
+  (if undo
+      (org-upwell-tidy--restore)
+    (pcase-let ((`(,n ,rules) (org-upwell-tidy--offer)))
+      (org-upwell-tidy--say n rules)
+      n)))
+
+(defun org-upwell-tidy--offer ()
+  "Offer the shared runs and strip the chosen ones.  Return how many moved."
   (org-upwell-with-store
    (let* ((items (org-upwell-items))
           (found (org-upwell--tidy-affixes
@@ -1235,7 +1280,8 @@ somebody reading it."
                                                   (cddr f) (car f))
                                           chosen))
                                 found))
-            (n 0))
+            (n 0)
+            moved rules)
        (dolist (f picked)
          (let* ((affix (car f))
                 (end (cadr f)))
@@ -1249,14 +1295,41 @@ somebody reading it."
                                                    (- (length name)
                                                       (length affix)))))))) 
                (when (and new (not (string-empty-p new)) (not (equal new name)))
+                 (push (cons (plist-get m :id) name) moved)
                  (org-upwell-save (plist-put (copy-sequence m) :name new))
                  (setq n (1+ n)))))
-           (message "org-upwell: to strip this from every new sighting, add %S to org-upwell-title-noise"
-                    (if (eq end 'head)
-                        (concat "\\`" (regexp-quote affix))
-                      (concat (regexp-quote affix) "\\'")))))
-       (message "org-upwell: %d name%s shortened" n (if (= n 1) "" "s"))
-       n))))
+           (push (if (eq end 'head)
+                     (concat "\\`" (regexp-quote affix))
+                   (concat (regexp-quote affix) "\\'"))
+                 rules)))
+       (setq org-upwell-tidy--last (nreverse moved))
+       (list n (nreverse rules))))))
+
+(defun org-upwell-tidy--say (n rules)
+  "Say that N names moved and which RULES would keep them short.
+
+Said here rather than inside `org-upwell-with-store\': that macro saves the
+file on the way out, and saving clears the echo area, so a message left
+inside it reaches `*Messages*\' and nowhere anybody is looking.  Which is
+also why it is one message and not one per affix -- announced in the loop,
+each was erased by the next, and the last by the closing count."
+  (message
+   "%s"
+   (mapconcat
+    #'identity
+    (append
+     (list (format "org-upwell: %d name%s shortened%s"
+                   n (if (= n 1) "" "s")
+                   (if (> n 0)
+                       (format "; C-u %s puts them back"
+                               (or (org-upwell--command-key
+                                    'org-upwell-tidy-names)
+                                   "M-x org-upwell-tidy-names"))
+                     "")))
+     (when rules
+       (cons "to strip these from every new sighting, add to `org-upwell-title-noise\':"
+             (mapcar (lambda (r) (format "  %S" r)) rules))))
+    "\n")))
 
 ;;;###autoload
 (defun org-upwell-copy-from (from)
@@ -1450,6 +1523,7 @@ is: the two things the row had to shorten."
     (org-upwell-bench-add-file         page "add a file")
     (org-upwell-bench-add-url          page "add a URL")
     (org-upwell-copy-from              page "copy from")
+    (org-upwell-tidy-names             page "tidy the names")
     (org-upwell-matrix                 page "the family")
     (org-upwell-visit-store            page "the store file")
     (org-upwell-bench-quit             page "hide the bench"))
@@ -1497,6 +1571,7 @@ WIDTH is the columns available, defaulting to this buffer's window."
   (define-key map (kbd "^") #'org-upwell-open-directory)
   (define-key map (kbd "P") #'org-upwell-bench-pin-directory)
   (define-key map (kbd "y") #'org-upwell-copy-from)
+  (define-key map (kbd "N") #'org-upwell-tidy-names)
   (define-key map (kbd "W") #'org-upwell-bench-work-here)
   (define-key map (kbd "M") #'org-upwell-bench-move-here)
   (define-key map (kbd "T") #'org-upwell-matrix)
