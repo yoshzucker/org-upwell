@@ -339,7 +339,7 @@ rather than guessing which column was meant.")
   (interactive)
   (let ((c (or (org-upwell-matrix--grid-column)
                (user-error "Not on the grid; move right to a column"))))
-    (org-upwell--show-away-from-bench (marker-buffer (nth 4 c)))
+    (org-upwell--show-away-from-listing (marker-buffer (nth 4 c)))
     (goto-char (nth 4 c))
     (org-fold-show-entry)))
 
@@ -663,6 +663,10 @@ characters is not a word.
 
 (when (fboundp 'evil-set-initial-state)
   (evil-set-initial-state 'org-upwell-matrix-mode 'emacs))
+
+;; A grid is a place somebody is choosing from, so whatever they choose must
+;; not be put into it -- see `org-upwell-listing-modes'.
+(add-to-list 'org-upwell-listing-modes 'org-upwell-matrix-mode)
 
 (eldoc-add-command-completions "org-upwell-matrix")
 

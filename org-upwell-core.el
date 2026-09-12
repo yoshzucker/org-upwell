@@ -292,6 +292,17 @@ a wait."
               (delq nil (mapcar (lambda (d) (and d (expand-file-name d)))
                                 org-upwell-search-roots))))
 
+(defvar org-upwell-listing-modes '(org-upwell-bench-mode)
+  "Modes whose buffers are listings somebody is choosing from.
+
+A listing is a strip of things to pick between, so whatever gets picked
+has to open somewhere else: putting it in the listing's own window
+deletes the very thing the next pick would be made from.  The window
+rules read this list rather than naming one mode, because there is more
+than one listing now and the rule was never about which.
+
+Each listing adds its own mode here.")
+
 (defun org-upwell--command-key (command)
   "The key COMMAND is on in this buffer, or nil when it is on none.
 

@@ -2904,6 +2904,36 @@ anything else speaks."
         ;; and it is the cursor that asks the question, not a keypress
         (should (memq 'org-upwell-matrix-show-column post-command-hook))))))
 
+(ert-deftest org-upwell-test-going-to-a-heading-leaves-the-grid-up ()
+  "A grid is a place somebody is choosing from, so the heading it sends them
+to cannot be put in its own window: doing that deletes the very thing the
+next choice would be made from.  The frame with nothing but the grid on it
+is exactly when the rule has to hold."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A" "B") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (let ((grid (get-buffer-window org-upwell-matrix-buffer))
+            target)
+        (should (window-live-p grid))
+        (select-window grid)
+        (delete-other-windows grid)
+        (should (= 1 (length (window-list nil 'nomini))))
+        (with-current-buffer org-upwell-matrix-buffer
+          (org-upwell-matrix-forward-column 3)
+          (should (equal "NEXT Second"
+                         (nth 2 (org-upwell-matrix--grid-column))))
+          (setq target (marker-buffer (nth 4 (org-upwell-matrix--grid-column))))
+          (org-upwell-matrix-goto))
+        ;; the grid is still up, the heading is beside it, and the cursor is
+        ;; in the heading -- going somewhere means arriving
+        (should (window-live-p (get-buffer-window org-upwell-matrix-buffer)))
+        (should (window-live-p (get-buffer-window target)))
+        (should (eq (window-buffer (selected-window)) target))
+        (with-current-buffer target
+          (should (equal "NEXT Second" (org-get-heading t t t t))))))))
+
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,
 which is not a word.  Numbers fit twenty -- and past nine a single digit

@@ -214,11 +214,11 @@ growing the frame to keep the main window's size."
 a configuration that already knows which extensions belong to the OS
 and which belong to Emacs should not have that knowledge duplicated
 here.  It may put a buffer on screen, so it is called from a window
-that is not the bench.  Unset, the OS default application is used and
+that is not one of our listings.  Unset, the OS default application is used and
 nothing opens in Emacs."
   (cond
    (org-upwell-open-function
-    (org-upwell--call-away-from-bench
+    (org-upwell--call-away-from-listing
      (lambda () (funcall org-upwell-open-function path))))
    ((eq system-type 'windows-nt)
     (w32-shell-execute "open" (replace-regexp-in-string "/" "\\" path t t)))
@@ -270,19 +270,27 @@ is the one the file is in now."
   "Renamed: a directory is a directory everywhere but in Windows\=' own
 vocabulary, and this package speaks its own.")
 
-(defun org-upwell--bench-window-p (&optional window)
-  "Return non-nil if WINDOW (default selected) shows the bench."
-  (let ((buf (window-buffer (or window (selected-window)))))
-    (eq (buffer-local-value 'major-mode buf) 'org-upwell-bench-mode)))
+(defun org-upwell--listing-window-p (&optional window)
+  "Return non-nil if WINDOW (default selected) shows one of our listings.
 
-(defun org-upwell--window-away-from-bench ()
-  "Return a window on this frame that is not the bench, or nil."
-  (seq-find (lambda (w) (not (org-upwell--bench-window-p w)))
+Any of them, not the bench alone -- see `org-upwell-listing-modes'.  A
+grid is as much a place somebody is choosing from as a bench is, and a
+rule that knew only about the bench put the chosen file into the grid."
+  (let ((buf (window-buffer (or window (selected-window)))))
+    (memq (buffer-local-value 'major-mode buf) org-upwell-listing-modes)))
+
+(defun org-upwell--window-away-from-listing ()
+  "Return a window on this frame that is not a listing of ours, or nil."
+  (seq-find (lambda (w) (not (org-upwell--listing-window-p w)))
             (window-list nil 'nomini)))
 
-(defun org-upwell--show-away-from-bench (buffer)
-  "Display BUFFER on this frame without replacing the bench."
-  (let ((win (org-upwell--window-away-from-bench)))
+(defun org-upwell--show-away-from-listing (buffer)
+  "Display BUFFER on this frame without replacing the listing.
+
+With no window free of one, a new one is split: the listing staying on
+screen is the point, and a frame with only a listing on it is exactly
+when that matters."
+  (let ((win (org-upwell--window-away-from-listing)))
     (if win
         (progn (set-window-buffer win buffer)
                (select-window win))
@@ -291,20 +299,20 @@ vocabulary, and this package speaks its own.")
                (inhibit-same-window . t))))
         (pop-to-buffer buffer)))))
 
-(defun org-upwell--call-away-from-bench (fn)
-  "Call FN with a window that is not the bench selected, if there is one.
+(defun org-upwell--call-away-from-listing (fn)
+  "Call FN with a window that is not a listing of ours selected, if there is one.
 
-The bench is a strip of materials: whatever FN decides to show, it must
+A listing is a strip of materials: whatever FN decides to show, it must
 not land in the listing the user is picking from."
-  (let ((win (and (org-upwell--bench-window-p)
-                  (org-upwell--window-away-from-bench))))
+  (let ((win (and (org-upwell--listing-window-p)
+                  (org-upwell--window-away-from-listing))))
     (if (window-live-p win)
         (with-selected-window win (funcall fn))
       (funcall fn))))
 
 (defun org-upwell--open-path-emacs (path)
   "Visit PATH in Emacs, in a window that is not the bench."
-  (org-upwell--show-away-from-bench (find-file-noselect path)))
+  (org-upwell--show-away-from-listing (find-file-noselect path)))
 
 (defun org-upwell--open-url (url)
   "Open URL, including `ms-excel:ofe|u|' style protocols."
@@ -434,11 +442,11 @@ from an Org buffer, point lands on the heading."
     ;; to see the list, so it answers even after `q' dismissed it.
     (org-upwell--bench-draw domain)
     ;; The window C-c v was pressed in keeps its buffer when that buffer
-    ;; is the bench or an agenda.  Both are ways of reading the heading,
-    ;; not somewhere to put its file: replacing the bench with the Org
-    ;; file deleted the listing this very call had just redrawn.
+    ;; is one of our listings or an agenda.  Both are ways of reading the
+    ;; heading, not somewhere to put its file: replacing the listing with
+    ;; the Org file deleted the very thing this call had just redrawn.
     (when (and (window-live-p here)
-               (not (org-upwell--bench-window-p here))
+               (not (org-upwell--listing-window-p here))
                (not (with-current-buffer (window-buffer here)
                       (derived-mode-p 'org-agenda-mode))))
       (with-selected-window here
@@ -575,7 +583,7 @@ reorganizes the frame, the bench is allowed to disappear."
       (let* ((frame-inhibit-implied-resize t)
              (pxw (frame-pixel-width))
              (pxh (frame-pixel-height))
-             (here (unless (org-upwell--bench-window-p) (selected-window)))
+             (here (unless (org-upwell--listing-window-p) (selected-window)))
              (win (or (org-upwell--split-for-bench
                        (org-upwell--bench-host-window) buf)
                       ;; Nothing else on the frame could hold it: the
@@ -884,7 +892,7 @@ and in real use.  Point's item button, if any, selects the entry."
          (file (org-upwell-file)))
     (unless (file-exists-p file)
       (user-error "No store yet at %s" file))
-    (org-upwell--show-away-from-bench (find-file-noselect file))
+    (org-upwell--show-away-from-listing (find-file-noselect file))
     (when-let ((id (and m (plist-get m :id))))
       (goto-char (point-min))
       (when (re-search-forward (concat "^[ \t]*:ID:[ \t]+"
