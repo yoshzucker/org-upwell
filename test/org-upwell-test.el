@@ -2522,8 +2522,12 @@ which is a list.  The question is what it was continued from."
                                (org-upwell-test--marker-at-id file "P")))))))))
 
 (ert-deftest org-upwell-test-a-cell-says-what-the-claim-is ()
-  "`×\=' is an answer somebody gave, `·\=' a proposal nobody has looked at, and
-a refusal is not a claim on the heading at all."
+  "One mark is an answer somebody gave, the other a proposal nobody has
+looked at, and a refusal is not a claim on the heading at all.
+
+Read through `org-upwell-matrix-glyphs\=' rather than spelled out, because
+what the marks are is a decision that has already been made once for the
+wrong reason -- they have to be one column wide in anybody\='s Emacs."
   (org-upwell-test--with-dir
     (let ((file (org-upwell-test--family)))
       (org-upwell-test--claim-to (list :url "https://x/a" :name "kept")
@@ -2536,19 +2540,23 @@ a refusal is not a claim on the heading at all."
                          "B")
       (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
       (with-current-buffer org-upwell-matrix-buffer
-        (let ((text (substring-no-properties (buffer-string))))
+        (let* ((text (substring-no-properties (buffer-string)))
+               (yes (cdr (assq 'confirmed org-upwell-matrix-glyphs)))
+               (maybe (cdr (assq 'provisional org-upwell-matrix-glyphs)))
+               (grid (lambda (name)
+                       ;; the marks, in order, on the row named NAME
+                       (let ((line (car (seq-filter
+                                         (lambda (l)
+                                           (string-search (concat "  " name) l))
+                                         (split-string text "\n")))))
+                         (should line)
+                         (substring line org-upwell-matrix-grid-column
+                                    (+ org-upwell-matrix-grid-column 7))))))
           ;; columns are 1 Project, 2 First, 3 Under first, 4 Second
-          (should (string-match-p "kept.*  × *$" (car (seq-filter
-                                                       (lambda (l) (string-search "kept" l))
-                                                       (split-string text "\n")))))
-          (should (string-match-p "proposed.* · *$"
-                                  (car (seq-filter
-                                        (lambda (l) (string-search "proposed" l))
-                                        (split-string text "\n")))))
-          ;; refused on B, kept on A: one mark, and it is not under Second
-          (let ((line (car (seq-filter (lambda (l) (string-search "refused" l))
-                                       (split-string text "\n")))))
-            (should (= 1 (seq-count (lambda (c) (memq c '(?× ?·))) line)))))))))
+          (should (equal (concat "  " yes "    ") (funcall grid "kept")))
+          (should (equal (concat "      " maybe) (funcall grid "proposed")))
+          ;; refused on B, kept on A: one mark, and not under Second
+          (should (equal (concat "  " yes "    ") (funcall grid "refused"))))))))
 
 (ert-deftest org-upwell-test-unlinking-a-cell-leaves-the-other-columns ()
   "What is wrong in a family is one heading holding something, not the
@@ -2563,13 +2571,9 @@ thing being wrong."
         (should (search-forward "shared" nil t))
         (beginning-of-line)
         ;; onto the grid, column 4 (Second)
-        (let* ((widths (org-upwell-matrix--widths
-                        org-upwell-matrix--rows org-upwell-matrix--columns
-                        (org-upwell-matrix--width)))
-               (left (+ 2 6 2 (car widths) 2 (cdr widths) 2)))
-          (move-to-column (+ left 6))
-          (should (equal "NEXT Second" (nth 2 (org-upwell-matrix--grid-column))))
-          (org-upwell-matrix-unlink)))
+        (move-to-column (+ org-upwell-matrix-grid-column 6))
+        (should (equal "NEXT Second" (nth 2 (org-upwell-matrix--grid-column))))
+        (org-upwell-matrix-unlink))
       (let ((m (org-upwell-find :name "shared")))
         (should (eq 'confirmed (org-upwell-claim-status (plist-get m :claims) "A")))
         (should-not (org-upwell-claim-status (plist-get m :claims) "B"))))))
@@ -2588,18 +2592,55 @@ of it, asked the way a grid makes natural."
         (goto-char (point-min))
         (should (search-forward "one" nil t))
         (beginning-of-line)
-        (let* ((widths (org-upwell-matrix--widths
-                        org-upwell-matrix--rows org-upwell-matrix--columns
-                        (org-upwell-matrix--width)))
-               (left (+ 2 6 2 (car widths) 2 (cdr widths) 2)))
-          ;; standing on column 2 (First), copy onto column 4 (Second)
-          (move-to-column (+ left 2))
-          (should (equal "NEXT First" (nth 2 (org-upwell-matrix--grid-column))))
-          (org-upwell-matrix-copy-column 4)))
+        ;; standing on column 2 (First), copy onto column 4 (Second)
+        (move-to-column (+ org-upwell-matrix-grid-column 2))
+        (should (equal "NEXT First" (nth 2 (org-upwell-matrix--grid-column))))
+        (org-upwell-matrix-copy-column 4))
       (dolist (name '("one" "two"))
         (should (eq 'provisional
                     (org-upwell-claim-status
                      (plist-get (org-upwell-find :name name) :claims) "B")))))))
+
+(ert-deftest org-upwell-test-every-mark-is-one-column-wide ()
+  "A grid whose columns move depending on whose Emacs draws it is not a
+grid.  `×\=' and `·\=' are East Asian Ambiguous -- in a CJK locale Emacs counts
+the first as two columns and the second as one, so a row of them does not
+even line up with itself."
+  ;; `set-language-environment' is not buffer-local -- it swaps the session's
+  ;; `char-width-table' -- so it is put back, or every width assertion after
+  ;; this one is measuring a different Emacs.
+  (let* ((was current-language-environment)
+         (cjk (unwind-protect
+                  (progn
+                    (set-language-environment "Japanese")
+                    (mapcar #'char-width
+                            (mapcar #'string-to-char
+                                    (mapcar #'cdr org-upwell-matrix-glyphs))))
+                (set-language-environment was))))
+    (should (equal '(1 1) cjk))
+    (should (equal '(1 1)
+                   (mapcar (lambda (g) (string-width (cdr g)))
+                           org-upwell-matrix-glyphs)))))
+
+(ert-deftest org-upwell-test-the-grid-says-what-its-marks-mean ()
+  "Read twice a month, and a mark nobody can name is a mark nobody reads."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a") '("A")
+                                 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let ((text (substring-no-properties (buffer-string))))
+          (should (string-match-p
+                   (concat (regexp-quote (cdr (assq 'confirmed
+                                                    org-upwell-matrix-glyphs)))
+                           " kept here")
+                   text))
+          (should (string-match-p
+                   (concat (regexp-quote (cdr (assq 'provisional
+                                                    org-upwell-matrix-glyphs)))
+                           " proposed")
+                   text)))))))
 
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,

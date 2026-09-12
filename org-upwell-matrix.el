@@ -37,14 +37,20 @@
 (defconst org-upwell-matrix-buffer "*Org Upwell Matrix*"
   "Name of the grid buffer.")
 
-(defconst org-upwell-matrix-glyphs '((confirmed . "×") (provisional . "·"))
-  "What a cell says for each live claim status.
+(defconst org-upwell-matrix-glyphs '((confirmed . "X") (provisional . "?"))
+  "What a cell says for each claim status.
 
 Two marks, because the difference is the whole of what tidying is about: a
-confirmed claim is somebody's answer and a provisional one is a proposal
-nobody has looked at.  A rejection is not a claim and leaves the cell
-empty -- it is recorded so the intersection stops asking, not so it can be
-read off a grid.")
+confirmed claim is somebody\='s answer and a provisional one is a proposal
+nobody has looked at -- hence `?\='.  A rejection has no mark and leaves the
+cell empty; it is recorded so the intersection stops asking, not so it can
+be read off a grid.
+
+ASCII, and not because ASCII is prettier.  `×\=' and `·\=' are East Asian
+Ambiguous: in a CJK locale Emacs counts them as two columns and a font may
+draw them either way, so a grid built out of them is a grid whose columns
+move depending on whose Emacs is drawing it.  Every column here is two
+characters wide and the ruler above has to land on them.")
 
 (defvar-local org-upwell-matrix--columns nil
   "This grid's headings, as (NUMBER ID TITLE LEVEL MARKER).")
@@ -117,8 +123,8 @@ would be forgotten when a status is added."
 (defun org-upwell-matrix--widths (rows columns width)
   "Return (NAME . WHERE) for ROWS under COLUMNS in WIDTH columns."
   (let* ((grid (max 1 (1- (* 2 (length columns)))))
-         ;; the indent a row starts with, the form, three gaps, and the grid
-         (fixed (+ 2 6 2 2 2 grid))
+         ;; the indent a row starts with, the grid, the form, three gaps
+         (fixed (+ 2 grid 2 6 2 2))
          (room (max 16 (- width fixed)))
          (asked-name (apply #'max 4 (mapcar (lambda (m)
                                               (string-width
@@ -139,12 +145,12 @@ would be forgotten when a status is added."
     ;; every row.  The whole of a path is in the echo area.
     (cons name (max 6 (min asked-where 24 (- room name))))))
 
-(defun org-upwell-matrix--rule (columns widths)
+(defun org-upwell-matrix--rule (columns _widths)
   "Return the line of column numbers standing over the grid, or lines.
 
 Two lines once there are ten columns: a single digit cannot say which of
 1 and 11 it is, and the list above the grid is a list, not a ruler."
-  (let* ((lead (make-string (+ 2 6 2 (car widths) 2 (cdr widths) 2) ?\s))
+  (let* ((lead "  ")
          (n (length columns))
          (units (mapconcat (lambda (c) (number-to-string (% (nth 0 c) 10)))
                            columns " ")))
@@ -175,36 +181,35 @@ Two lines once there are ten columns: a single digit cannot say which of
   (let* ((name (or (plist-get m :name) "?"))
          (start (point)))
     (insert "  ")
+    ;; The grid first, beside the name rather than across a column of path
+    ;; from it: a mark and the thing it is about have to be read together,
+    ;; and every column between them is one the eye crosses on every row.
+    (insert (mapconcat (lambda (c)
+                         (or (cdr (assq (org-upwell-matrix--status m c)
+                                        org-upwell-matrix-glyphs))
+                             " "))
+                       columns " ")
+            "  ")
     (insert (propertize (org-upwell--pad (org-upwell-form m) 6) 'face 'shadow)
             "  ")
     (insert (org-upwell--pad
              (truncate-string-to-width name (car widths) nil nil t)
              (car widths))
             "  ")
-    (insert (propertize (org-upwell--pad
-                         (org-upwell--fit-where m (cdr widths)) (cdr widths))
-                        'face 'shadow)
-            "  ")
     (insert (string-trim-right
-             (mapconcat (lambda (c)
-                          (or (cdr (assq (org-upwell-matrix--status m c)
-                                         org-upwell-matrix-glyphs))
-                              " "))
-                        columns " "))
+             (propertize (org-upwell--fit-where m (cdr widths))
+                         'face 'shadow))
             "\n")
     (put-text-property start (1- (point)) 'org-upwell m)))
 
+(defconst org-upwell-matrix-grid-column 2
+  "Screen column the grid starts at: the indent a row opens with.")
+
 (defun org-upwell-matrix--grid-column ()
   "Return the column point is over, or nil when it is not over the grid."
-  (when-let ((widths (and org-upwell-matrix--rows
-                          (org-upwell-matrix--widths
-                           org-upwell-matrix--rows
-                           org-upwell-matrix--columns
-                           (org-upwell-matrix--width)))))
-    (let* ((left (+ 2 6 2 (car widths) 2 (cdr widths) 2))
-           (off (- (current-column) left)))
-      (when (>= off 0)
-        (nth (/ off 2) org-upwell-matrix--columns)))))
+  (let ((off (- (current-column) org-upwell-matrix-grid-column)))
+    (when (and (>= off 0) org-upwell-matrix--columns)
+      (nth (/ off 2) org-upwell-matrix--columns))))
 
 (defun org-upwell-matrix--width ()
   "Columns available to this grid."
@@ -389,6 +394,9 @@ characters is not a word.
 
 \\{org-upwell-matrix-mode-map}"
   (setq truncate-lines t)
+  ;; A grid is read by holding a row and a column at once, and a row of marks
+  ;; two characters apart is the easiest thing in the world to slip off.
+  (hl-line-mode 1)
   (add-hook 'eldoc-documentation-functions
             #'org-upwell-matrix-eldoc-function nil t)
   (eldoc-mode 1)
@@ -426,6 +434,13 @@ characters is not a word.
         (insert "\n")
         (if (null rows)
             (insert (propertize "  (nothing held here yet)\n" 'face 'shadow))
+          (insert (propertize
+                   (concat "  "
+                           (cdr (assq 'confirmed org-upwell-matrix-glyphs))
+                           " kept here    "
+                           (cdr (assq 'provisional org-upwell-matrix-glyphs))
+                           " proposed, not answered yet\n")
+                   'face 'shadow))
           (insert (propertize (org-upwell-matrix--rule columns widths)
                               'face 'shadow))
           (dolist (m rows)

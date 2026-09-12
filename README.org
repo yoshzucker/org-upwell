@@ -249,8 +249,15 @@ it. A single bench cannot show that, because what is wrong is a relation
 between two of them.
 
 ~T~ on the bench, or ~M-x org-upwell-matrix~. Rows are things, columns are
-headings, a cell is a claim: ~×~ is an answer somebody gave, ~·~ a proposal
-nobody has looked at, and a refusal draws nothing.
+headings, a cell is a claim: ~X~ is an answer somebody gave, ~?~ a proposal
+nobody has looked at, and a refusal draws nothing. The buffer says so above
+the grid, and the line under the cursor is highlighted -- a row of marks two
+characters apart is the easiest thing in the world to slip off.
+
+The marks are ASCII, and not because ASCII is prettier. ~×~ and ~·~ are East
+Asian Ambiguous: in a CJK locale Emacs counts the first as two columns and
+the second as one, and a font may draw either way, so a grid built out of
+them is a grid whose columns move depending on whose Emacs is drawing it.
 
 #+begin_example
 Move to the new vendor
@@ -260,16 +267,21 @@ Move to the new vendor
    4    NEXT File the photos
    5    NEXT Read the vendor manual
 
-                                             1 2 3 4 5
-  dir     files              …/demo            ×
-  slides  Vendor day deck    contoso.sh…      ×     ·
-  csv     quote-acme.csv     …/demo/files     ×
-  pdf     vendor manual      example.com            ×
+  X kept here    ? proposed, not answered yet
+  1 2 3 4 5
+    X        dir     files              …/demo
+    X     ?  slides  Vendor day deck    contoso.sharepoint.com
+    X        csv     quote-acme.csv     …/demo/files
+          X  pdf     vendor manual      example.com
 #+end_example
 
 The family is the heading at point's *parent* and everything under it, so
 standing on a leaf task shows the siblings it was continued from. With a
 prefix argument the family is read from a list.
+
+The grid sits to the left of the name rather than past the path: a mark and
+the thing it is about have to be read together, and every column between
+them is one the eye crosses on every row.
 
 The columns are numbered rather than named. Titles as column headers fit
 six or eight of them in eighty columns, cut to four characters each, which
