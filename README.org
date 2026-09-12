@@ -249,10 +249,12 @@ it. A single bench cannot show that, because what is wrong is a relation
 between two of them.
 
 ~T~ on the bench, or ~M-x org-upwell-matrix~. Rows are things, columns are
-headings, a cell is a claim: ~X~ is an answer somebody gave, ~?~ a proposal
-nobody has looked at, and a refusal draws nothing. The buffer says so above
-the grid, and the line under the cursor is highlighted -- a row of marks two
-characters apart is the easiest thing in the world to slip off.
+headings, a cell is a claim: ~X~ is an answer somebody gave, ~?~ a claim
+proposed and not yet answered, and a refusal draws nothing. ~?~ is
+*provisional*, the same word the bench uses for it -- one status, one name.
+The buffer says so above the grid, and the line under the cursor is
+highlighted -- a row of marks two characters apart is the easiest thing in
+the world to slip off.
 
 The marks are ASCII, and not because ASCII is prettier. ~×~ and ~·~ are East
 Asian Ambiguous: in a CJK locale Emacs counts the first as two columns and
@@ -267,32 +269,78 @@ Move to the new vendor
    4    NEXT File the photos
    5    NEXT Read the vendor manual
 
-  X kept here    ? proposed, not answered yet
-  1 2 3 4 5
-    X        dir     files              …/demo
-    X     ?  slides  Vendor day deck    contoso.sharepoint.com
-    X        csv     quote-acme.csv     …/demo/files
-          X  pdf     vendor manual      example.com
+  X kept here    ? provisional, nobody has answered
+          1 2 3 4 5
+  dir       X        files              …/demo
+  dir       ?        shared             …/demo/files
+  slides    X     ?  Vendor day deck    contoso.sharepoint.com
+  pptx      X        kickoff.pptx       …/demo/files
+  csv       X        quote-acme.csv     …/demo/files
+  txt       X        quote-beta.txt     …/demo/files
+  page      ?        Vendor list        contoso.sharepoint.com
+  txt       ?        brief.txt          …/demo/files
+  pdf             X  vendor manual      example.com
 #+end_example
 
-The family is the heading at point's *parent* and everything under it, so
-standing on a leaf task shows the siblings it was continued from. With a
-prefix argument the family is read from a list.
+Where the family is rooted depends on how you got there, because the two
+cases want different answers. *Stood on* a heading -- point, an agenda row,
+the running clock -- roots at its **parent**, so standing on a leaf task
+shows the siblings it was continued from; its own subtree would be one
+column, which is a list. *Named* from a list -- under a prefix argument, or
+because there was no heading to stand on -- roots at the **heading itself**:
+what somebody picks out of a list is nearly always a container and they mean
+what is under it, and its parent would put every sibling project into the
+grid at once.
 
-The grid sits to the left of the name rather than past the path: a mark and
-the thing it is about have to be read together, and every column between
-them is one the eye crosses on every row.
+Neither is final. ~<~ moves the root out to the parent and ~>~ moves it in
+to the column under the cursor -- left and right as the list above the grid
+is drawn, where a child sits to the right of its parent, so the key that
+goes to a child points the way the child sits. (The agenda has ~<~ the other
+way round, and no indented tree on screen for a direction to disagree
+with.) ~f~ reads another heading. Widening is the direction that matters: a
+stray file usually came from a neighbouring project, and that is a relation
+between two families, invisible until both of their tasks are columns of one
+grid -- the same reason a single bench cannot show what is wrong inside one
+family. There is no key for jumping to a sibling family, because ~>~ then
+~<~ is that, and ~f~ opens any family outright.
+
+The row reads /what it is/, then /which headings hold it/, then /what it is
+called/ and /where it is/. The grid sits against the name rather than past
+the path: a mark and the thing it is about have to be read together, and
+every column between them is one the eye crosses on every row.
 
 The columns are numbered rather than named. Titles as column headers fit
 six or eight of them in eighty columns, cut to four characters each, which
 is not a word; numbers fit twenty and lose nothing, because the list above
-the grid says the rest and the echo area says which heading the cursor's
-column is.
+the grid says the rest -- and the heading the cursor's column is shows there
+in bold, as well as in the echo area. Bold rather than a second band of
+background: the row already has one, and two bands would be two claims of
+the same kind about one cursor.
 
-~d~ takes a thing off one heading and leaves both. ~c~ keeps it there. ~y~
-copies a whole column onto another, which is the move that made this buffer
-necessary and the one that makes a mess of it. ~R~ renames a thing and ~D~
-forgets it everywhere; neither touches a file.
+The buffer opens on a cell, and ~h~ and ~l~ walk along the grid while ~j~
+and ~k~ change row and stay in the column. Every command here wants a cell
+or a column, so opening anywhere else would leave all of them answering
+"not on the grid", which is true and useless.
+
+~d~ takes a thing off this heading, emptying the cell. ~c~ keeps it here,
+which answers a ~?~ and fills an empty cell alike -- both are the same act,
+saying this belongs here.
+
+~a~ brings in something no heading in the family holds. The grid can only
+draw what some column already claims, so the file that belongs on this task
+but was filed under last month's is exactly the one missing from the
+picture, and no amount of reading will show it; ~a~ is the way in. It offers
+everything in the store this heading does not hold -- including things
+refused before, because changing your mind is the ordinary case -- and
+claims the chosen one as an answer, since somebody chose it.
+
+~TAB~ (~C-i~) and ~RET~ go to the heading this column is, in a window that
+is not the grid -- the same act the agenda puts on ~TAB~, and the grid keeps
+standing.
+
+~y~ copies a whole column onto another, which is the move that made this
+buffer necessary and the one that makes a mess of it. ~R~ renames a thing
+and ~D~ forgets it everywhere; neither touches a file.
 
 A heading with no org-id holds nothing and is marked ~(no id)~ -- this
 walks your own file, and minting an id for every heading in a subtree in

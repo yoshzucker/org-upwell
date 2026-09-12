@@ -2639,8 +2639,270 @@ even line up with itself."
           (should (string-match-p
                    (concat (regexp-quote (cdr (assq 'provisional
                                                     org-upwell-matrix-glyphs)))
-                           " proposed")
-                   text)))))))
+                           " provisional")
+                   text))
+          ;; One status, one word.  The bench says "provisional"; a grid that
+          ;; said "proposed" for the same thing read as a third status.
+          (should-not (string-match-p "proposed" text)))))))
+
+(ert-deftest org-upwell-test-the-grid-opens-on-a-cell ()
+  "Every command on this buffer wants a cell, so opening anywhere else
+leaves all of them answering \"not on the grid\", which is true and
+useless."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a") '("A")
+                                 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (should (org-upwell-matrix--item-at-point))
+        (should (equal 0 (org-upwell-matrix--grid-index)))
+        ;; and a cell command works without moving first
+        (should (org-upwell-matrix--cell))))))
+
+(ert-deftest org-upwell-test-the-grid-is-walked-by-cell ()
+  "A row of marks two columns apart is not something to find by counting,
+and the ends have to hold: walking off either one would put the cursor
+where no cell command can be used."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a") '("A")
+                                 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let ((last (1- (length org-upwell-matrix--columns))))
+          (org-upwell-matrix-forward-column)
+          (should (equal 1 (org-upwell-matrix--grid-index)))
+          (should (equal "NEXT First" (nth 2 (org-upwell-matrix--grid-column))))
+          (org-upwell-matrix-backward-column)
+          (should (equal 0 (org-upwell-matrix--grid-index)))
+          ;; clamped at both ends
+          (org-upwell-matrix-backward-column)
+          (should (equal 0 (org-upwell-matrix--grid-index)))
+          (org-upwell-matrix-forward-column 99)
+          (should (equal last (org-upwell-matrix--grid-index)))
+          (org-upwell-matrix-forward-column)
+          (should (equal last (org-upwell-matrix--grid-index))))))))
+
+(ert-deftest org-upwell-test-changing-row-keeps-the-column ()
+  "Reading a grid is holding a row and a column at once; a row move that
+drops the column makes the second one impossible."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "aaa") '("A")
+                                 'confirmed)
+      (org-upwell-test--claim-to (list :url "https://x/b" :name "bbb") '("A")
+                                 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (org-upwell-matrix-forward-column 2)
+        (let ((first (plist-get (org-upwell-matrix--item-at-point) :name)))
+          (org-upwell-matrix-next-row)
+          (should (equal 2 (org-upwell-matrix--grid-index)))
+          (should-not (equal first (plist-get (org-upwell-matrix--item-at-point)
+                                              :name)))
+          ;; and it stops at the last row rather than walking into the legend
+          (org-upwell-matrix-next-row 99)
+          (should (org-upwell-matrix--item-at-point))
+          (should (equal 2 (org-upwell-matrix--grid-index)))
+          (org-upwell-matrix-previous-row 99)
+          (should (equal first (plist-get (org-upwell-matrix--item-at-point)
+                                          :name))))))))
+
+(ert-deftest org-upwell-test-keeping-fills-an-empty-cell ()
+  "`c' answers a proposal and makes a link where there was none, because
+both are the same act: saying this belongs here."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A") 'provisional)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        ;; the provisional cell (column 2, First) becomes an answer
+        (org-upwell-matrix-forward-column 1)
+        (should (eq 'provisional
+                    (org-upwell-matrix--status
+                     (org-upwell-matrix--item-at-point)
+                     (org-upwell-matrix--grid-column))))
+        (org-upwell-matrix-keep)
+        ;; the empty cell (column 4, Second) becomes an answer too
+        (org-upwell-matrix-forward-column 2)
+        (should-not (org-upwell-matrix--status
+                     (org-upwell-matrix--item-at-point)
+                     (org-upwell-matrix--grid-column)))
+        (org-upwell-matrix-keep))
+      (let ((m (org-upwell-find :name "a")))
+        (should (eq 'confirmed (org-upwell-claim-status (plist-get m :claims) "A")))
+        (should (eq 'confirmed (org-upwell-claim-status (plist-get m :claims) "B")))))))
+
+(ert-deftest org-upwell-test-something-no-column-holds-can-be-brought-in ()
+  "The file that belongs on this task but was filed under last month\='s is
+exactly the one the grid cannot draw, because no column holds it.  A
+picture of a family with no way in is a picture you cannot act on."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "here")
+                                 '("A") 'confirmed)
+      (org-upwell-test--claim-to (list :url "https://x/z" :name "elsewhere")
+                                 '("X") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (should-not (seq-find (lambda (m) (equal "elsewhere" (plist-get m :name)))
+                              org-upwell-matrix--rows))
+        (org-upwell-matrix-forward-column 3)
+        (should (equal "NEXT Second" (nth 2 (org-upwell-matrix--grid-column))))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_prompt coll &rest _)
+                     (or (seq-find (lambda (l) (string-match-p "elsewhere" l))
+                                   coll)
+                         (error "elsewhere was not offered")))))
+          (org-upwell-matrix-add))
+        (should (seq-find (lambda (m) (equal "elsewhere" (plist-get m :name)))
+                          org-upwell-matrix--rows)))
+      (let ((m (org-upwell-find :name "elsewhere")))
+        (should (eq 'confirmed
+                    (org-upwell-claim-status (plist-get m :claims) "B")))
+        ;; brought in, not moved: the heading it came from still holds it
+        (should (eq 'confirmed
+                    (org-upwell-claim-status (plist-get m :claims) "X")))))))
+
+(ert-deftest org-upwell-test-a-heading-is-not-offered-what-it-holds ()
+  "The answer for something already on the grid is a cell, not a prompt --
+and a thing said no to can be brought back, because changing your mind is
+the ordinary case."
+  (org-upwell-test--with-dir
+    (org-upwell-test--family)
+    (org-upwell-test--claim-to (list :url "https://x/a" :name "held")
+                               '("A") 'confirmed)
+    (org-upwell-test--claim-to (list :url "https://x/m" :name "maybe")
+                               '("A") 'provisional)
+    (org-upwell-test--claim-to (list :url "https://x/n" :name "refused")
+                               '("A") 'rejected)
+    (org-upwell-test--claim-to (list :url "https://x/z" :name "elsewhere")
+                               '("X") 'confirmed)
+    (let ((labels (mapcar #'car
+                          (org-upwell-with-store
+                           (org-upwell-matrix--candidates "A")))))
+      (should-not (seq-find (lambda (l) (string-match-p "held" l)) labels))
+      (should-not (seq-find (lambda (l) (string-match-p "maybe" l)) labels))
+      (should (seq-find (lambda (l) (string-match-p "refused" l)) labels))
+      (should (seq-find (lambda (l) (string-match-p "elsewhere" l)) labels)))))
+
+(defun org-upwell-test--titles ()
+  "The column titles of the grid buffer, in order."
+  (with-current-buffer org-upwell-matrix-buffer
+    (mapcar (lambda (c) (nth 2 c)) org-upwell-matrix--columns)))
+
+(ert-deftest org-upwell-test-the-root-moves-out-and-in ()
+  "A stray file usually came from a neighbouring project, which is a
+relation between two families -- invisible until both of their tasks are
+columns of one grid."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A" "A1" "B") 'confirmed)
+      ;; standing on the sub-task: the family is its parent's
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "A1"))
+      (should (equal '("NEXT First" "NEXT Under first")
+                     (org-upwell-test--titles)))
+      (with-current-buffer org-upwell-matrix-buffer
+        (org-upwell-matrix-widen)
+        (should (equal '("Project" "NEXT First" "NEXT Under first" "NEXT Second")
+                       (org-upwell-test--titles)))
+        ;; the top of the file has no family above it
+        (should-error (org-upwell-matrix-widen) :type 'user-error)
+        ;; and back in, to the column under the cursor
+        (org-upwell-matrix-forward-column 1)
+        (should (equal "NEXT First" (nth 2 (org-upwell-matrix--grid-column))))
+        (org-upwell-matrix-narrow)
+        (should (equal '("NEXT First" "NEXT Under first")
+                       (org-upwell-test--titles)))
+        ;; the first column is the family itself, so there is nowhere to go
+        (org-upwell-matrix--goto-index 0)
+        (should-error (org-upwell-matrix-narrow) :type 'user-error)))))
+
+(ert-deftest org-upwell-test-a-named-heading-is-the-family-itself ()
+  "What somebody picks out of a list is nearly always a container and they
+mean what is under it.  Its parent would put every sibling project into
+the grid at once."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A" "A1") 'confirmed)
+      (cl-letf (((symbol-function 'org-upwell--read-heading-marker)
+                 (lambda () (org-upwell-test--marker-at-id file "A"))))
+        ;; named under a prefix argument
+        (org-upwell-matrix nil t)
+        (should (equal '("NEXT First" "NEXT Under first")
+                       (org-upwell-test--titles)))
+        ;; and named again from inside the grid
+        (with-current-buffer org-upwell-matrix-buffer
+          (org-upwell-matrix-widen)
+          (should (equal '("Project" "NEXT First" "NEXT Under first"
+                           "NEXT Second")
+                         (org-upwell-test--titles)))
+          (org-upwell-matrix-choose)
+          (should (equal '("NEXT First" "NEXT Under first")
+                         (org-upwell-test--titles)))))
+      ;; stood on, the same heading gives its parent's family instead
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "A"))
+      (should (equal '("Project" "NEXT First" "NEXT Under first" "NEXT Second")
+                     (org-upwell-test--titles))))))
+
+(ert-deftest org-upwell-test-in-and-out-follow-the-indent ()
+  "The list above the grid draws the family as an indented tree, so the key
+that moves to a child has to point the way the child sits.  The agenda has
+`<\=' the other way round and no tree on screen to disagree with."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let (parent child)
+          (goto-char (point-min))
+          (search-forward "NEXT First")
+          (goto-char (match-beginning 0))
+          (setq parent (current-column))
+          (search-forward "NEXT Under first")
+          (goto-char (match-beginning 0))
+          (setq child (current-column))
+          ;; the child is drawn to the right of its parent
+          (should (< parent child))))
+      ;; so right goes to the child and left comes back out
+      (should (eq 'org-upwell-matrix-narrow
+                  (lookup-key org-upwell-matrix-mode-map (kbd ">"))))
+      (should (eq 'org-upwell-matrix-widen
+                  (lookup-key org-upwell-matrix-mode-map (kbd "<")))))))
+
+(ert-deftest org-upwell-test-the-cursors-column-is-named-in-the-list ()
+  "Two characters is not a word, and the echo area is gone the moment
+anything else speaks."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        ;; `overlayp' is true of a deleted overlay and its ends read nil, so
+        ;; whether it is live is `overlay-buffer'.
+        (cl-flet ((marked ()
+                    (let ((o org-upwell-matrix--column-overlay))
+                      (and (overlayp o) (overlay-buffer o)
+                           (buffer-substring-no-properties
+                            (overlay-start o) (overlay-end o))))))
+          ;; the grid opens on the first column, and says so without waiting
+          (should (string-match-p "Project" (or (marked) "")))
+          (org-upwell-matrix-forward-column)
+          (org-upwell-matrix-show-column)
+          (should (string-match-p "NEXT First" (or (marked) "")))
+          (should-not (string-match-p "Under" (or (marked) "")))
+          ;; off the grid, nothing is claimed
+          (goto-char (point-min))
+          (org-upwell-matrix-show-column)
+          (should-not (marked)))
+        ;; and it is the cursor that asks the question, not a keypress
+        (should (memq 'org-upwell-matrix-show-column post-command-hook))))))
 
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,
