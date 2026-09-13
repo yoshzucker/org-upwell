@@ -27,6 +27,9 @@
 ;; The grid requires this file, so this file only names it.  The legend below
 ;; lists it as a command the bench can reach, which is a symbol and not a call.
 (declare-function org-upwell-matrix "org-upwell-matrix" (&optional marker choose))
+;; Dired is one of the three ways into `org-upwell-work-here', and the only
+;; one whose buffer this file never creates -- so it is named, not required.
+(declare-function dired-get-filename "dired" (&optional localp no-error-if-not-filep))
 (require 'seq)
 (require 'cl-lib)
 (require 'button)
@@ -635,6 +638,8 @@ is `org-upwell-bench\=', which does the choosing and then calls this."
            'follow-link t
            'help-echo (org-upwell-file)
            'action (lambda (_) (org-upwell-visit-store)))
+          (when-let ((line (org-upwell--working-line domain)))
+            (insert "\n" line))
           (org-upwell--bench-insert-sections domain buf)
           (insert "\n" (org-upwell--bench-legend
                          (let ((win (get-buffer-window buf nil)))
@@ -737,6 +742,50 @@ and the rest is slack for the two flags a row may carry."
                                  (string-width (org-upwell--item-where m)))
                                items))))
     (cons name (max 12 (min asked (- total name 45))))))
+
+(defun org-upwell--marked-on (marker)
+  "Return the heading that actually carries `:UPWELL_DIR:\' above MARKER.
+
+`org-entry-get\' with inheritance returns the value and not where it came
+from, and a directory somebody never set on this heading is a directory
+they cannot account for.  Walked here rather than reported by the getter,
+because it is wanted only when there is a line to print it on."
+  (org-with-point-at marker
+    (org-back-to-heading t)
+    (let (found)
+      (while (and (not found)
+                  (or (org-entry-get (point) "UPWELL_DIR")
+                      (org-up-heading-safe)))
+        (when (org-entry-get (point) "UPWELL_DIR")
+          (setq found (org-get-heading t t t t))))
+      found)))
+
+(defun org-upwell--working-line (domain)
+  "Return the line saying where DOMAIN\'s work is done, or nil.
+
+In the header rather than among the rows.  Every row of this listing is a
+stored item and every row command expects one; a row for a directory that
+is not stored would look like the others and answer to half their keys.
+And it is not a material anyway -- it is a fact about the heading, like
+the title it sits under."
+  (when-let* ((where (org-upwell-working-directory domain))
+              (dir (car where)))
+    (let* ((marker (plist-get domain :marker))
+           (from (and (eq (cdr where) 'marked) marker
+                      (org-upwell--marked-on marker)))
+           (here (and from (equal from (plist-get domain :title)))))
+      (concat
+       (propertize "work here  " 'face 'shadow)
+       (abbreviate-file-name (file-name-as-directory dir))
+       (pcase (cdr where)
+         ('marked (propertize
+                   (if (or here (null from)) "  main"
+                     (format "  main, from \"%s\"" from))
+                   'face 'shadow
+                   'help-echo "written on the heading, and inherited by its tasks"))
+         ('guessed (propertize
+                    "  main?" 'face 'shadow
+                    'help-echo "guessed from where its files are")))))))
 
 (defun org-upwell--working-here-p (item domain)
   "Return `marked\=', `guessed\=' or nil for ITEM as DOMAIN\='s working directory."
@@ -1360,6 +1409,92 @@ undo the tidying."
                (org-with-point-at from (org-get-heading t t t t)))
       n)))
 
+(defun org-upwell--read-any-heading-marker (prompt)
+  "Read any heading in the refile targets and return its marker.
+
+Wider than `org-upwell--read-heading-marker\', and it has to be.  That one
+offers what is in flight -- the running clock, today\'s clocked work, open
+NEXT and ONGO, headings that already hold something -- which is the right
+list for \"put this file somewhere\".  Where the work is *done* is a fact
+about a project, and a project heading carries no keyword and often holds
+nothing yet, so it is in none of those.
+
+Org\'s own refile targets are the list of \"every heading you might mean\",
+already configured, already familiar."
+  (require 'org-refile)
+  (let ((target (org-refile-get-location prompt nil t)))
+    (unless target (user-error "org-upwell: no heading chosen"))
+    (let ((file (nth 1 target))
+          (pos (nth 3 target)))
+      (with-current-buffer (find-file-noselect file)
+        (save-excursion
+          (goto-char (or pos (point-min)))
+          (org-back-to-heading t)
+          (point-marker))))))
+
+(defun org-upwell--set-working-directory (marker dir)
+  "Write DIR as the heading at MARKER\'s working directory.  Return DIR.
+
+The one act behind every door into it.  `:UPWELL_DIR:\' is inherited, so
+writing it on a project answers for every task under it, and it is the same
+property `org-upwell-create\' puts new files in -- one fact, not two."
+  (let ((dir (file-name-as-directory (expand-file-name dir))))
+    (unless (file-directory-p dir)
+      (user-error "org-upwell: %s is not a directory" dir))
+    (org-with-point-at marker
+      (org-back-to-heading t)
+      (org-entry-put (point) "UPWELL_DIR" (abbreviate-file-name dir)))
+    (message "org-upwell: work here -- %s  (%s)"
+             (abbreviate-file-name dir)
+             (org-with-point-at marker (org-get-heading t t t t)))
+    dir))
+
+;;;###autoload
+(defun org-upwell-work-here ()
+  "Say where a heading\'s work is done, from wherever you are standing.
+
+Three ways in, one act.  Whichever is used, `:UPWELL_DIR:\' is written on
+the heading and every reader of it -- the bench, `org-upwell-create\',
+\[org-upwell-bench-move-here] -- answers the same way afterwards.
+
+  On the bench, over a directory row: that row, this bench\'s heading.
+  Nothing is asked; the row and the heading are both already chosen.
+
+  In dired: the directory being shown, and the heading is read from the
+  refile targets.  Where the work is done is a fact about a project, and
+  the directory is the thing you are looking at when you notice it.
+
+  On an Org heading: that heading, and the directory is read.  The other
+  way round, and for the same reason -- whichever half is in front of you
+  is the half not worth asking about."
+  (interactive)
+  (cond
+   ((and (derived-mode-p 'org-upwell-bench-mode)
+         (org-upwell--bench-item-at-point))
+    (org-upwell-bench-work-here))
+   ((derived-mode-p 'dired-mode)
+    (let ((dir (or (let ((f (ignore-errors (dired-get-filename nil t))))
+                     (and f (file-directory-p f) f))
+                   default-directory)))
+      (org-upwell--set-working-directory
+       (org-upwell--read-any-heading-marker
+        (format "Work in %s is done for: " (abbreviate-file-name dir)))
+       dir)))
+   ((and (derived-mode-p 'org-mode) (not (org-before-first-heading-p)))
+    (let* ((marker (save-excursion (org-back-to-heading t) (point-marker)))
+           (start (or (car (org-upwell-working-directory
+                            (org-upwell-domain marker)))
+                      default-directory)))
+      (org-upwell--set-working-directory
+       marker
+       (read-directory-name
+        (format "Work on \"%s\" is done in: "
+                (org-with-point-at marker (org-get-heading t t t t)))
+        (file-name-as-directory start) nil t))))
+   (t
+    (user-error
+     "org-upwell: no directory row, no dired, and no heading at point"))))
+
 (defun org-upwell-bench-work-here ()
   "Say that this row\='s directory is where this heading\='s work is done.
 
@@ -1381,11 +1516,8 @@ how to settle it."
                 (or (plist-get m :path)
                     (user-error "org-upwell: no path for %s"
                                 (plist-get m :name))))))
-      (org-with-point-at marker
-        (org-back-to-heading t)
-        (org-entry-put (point) "UPWELL_DIR" (abbreviate-file-name dir)))
-      (org-upwell--bench-redraw)
-      (message "org-upwell: work here -- %s" (abbreviate-file-name dir)))))
+      (org-upwell--set-working-directory marker dir)
+      (org-upwell--bench-redraw))))
 
 (defun org-upwell-bench-move-here ()
   "Move this row\='s file into the directory the work is done in.
@@ -1507,7 +1639,7 @@ is: the two things the row had to shorten."
     (org-upwell-bench-open-in-emacs    row  "open in Emacs")
     (org-upwell-open-directory         row  "go to its place")
     (org-upwell-bench-pin-directory    row  "keep its place")
-    (org-upwell-bench-work-here        row  "work here")
+    (org-upwell-work-here              row  "work here")
     (org-upwell-bench-move-here        row  "move it here")
     (org-upwell-bench-toggle-mark      row  "mark, move down")
     (org-upwell-bench-unmark           row  "unmark, move up")
@@ -1572,7 +1704,7 @@ WIDTH is the columns available, defaulting to this buffer's window."
   (define-key map (kbd "P") #'org-upwell-bench-pin-directory)
   (define-key map (kbd "y") #'org-upwell-copy-from)
   (define-key map (kbd "N") #'org-upwell-tidy-names)
-  (define-key map (kbd "W") #'org-upwell-bench-work-here)
+  (define-key map (kbd "W") #'org-upwell-work-here)
   (define-key map (kbd "M") #'org-upwell-bench-move-here)
   (define-key map (kbd "T") #'org-upwell-matrix)
   (define-key map (kbd "RET") #'org-upwell-bench-open-at-point)

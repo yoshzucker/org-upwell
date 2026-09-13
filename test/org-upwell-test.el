@@ -1711,6 +1711,99 @@ decides what Org does.  Both may be on, and then both happen."
                (should (equal drawn mk)))))
        (kill-buffer agenda)))))
 
+(defun org-upwell-test--dir-tree (dir)
+  "Write a project carrying DIR and a child that inherits it.  Return the file."
+  (org-upwell-test--write-journal
+   (concat "* NEXT Project\n:PROPERTIES:\n:ID: P\n:UPWELL_DIR: " dir
+           "\n:END:\n** NEXT Child task\n:PROPERTIES:\n:ID: C\n:END:\n")))
+
+(ert-deftest org-upwell-test-where-the-work-is-done-is-in-the-header ()
+  "In the header rather than among the rows.  Every row is a stored item and
+every row command expects one, so a row for a directory nothing stored would
+look like the others and answer to half their keys."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "acme/" (file-name-directory (org-upwell-file))))
+           (file (org-upwell-test--dir-tree work)))
+      (make-directory work t)
+      (org-upwell-bench (org-upwell-test--marker-at-id file "P"))
+      (with-current-buffer "*org-upwell*"
+        (let* ((lines (split-string (substring-no-properties (buffer-string)) "\n"))
+               (header (nth 1 lines)))
+          ;; the second line, under the title, before any section
+          (should (string-match-p "work here" header))
+          (should (string-match-p "acme" header))
+          (should (string-match-p "main" header))
+          ;; quoted: `?' is a quantifier, and "main?" as a regexp matches "main"
+          (should-not (string-match-p (regexp-quote "main?") header)))))))
+
+(ert-deftest org-upwell-test-an-inherited-directory-says-where-it-came-from ()
+  "`org-entry-get' with inheritance returns the value and not where it came
+from, and a directory nobody set on this heading is one they cannot account
+for."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "acme/" (file-name-directory (org-upwell-file))))
+           (file (org-upwell-test--dir-tree work)))
+      (make-directory work t)
+      (org-upwell-bench (org-upwell-test--marker-at-id file "C"))
+      (with-current-buffer "*org-upwell*"
+        (let ((header (nth 1 (split-string (substring-no-properties (buffer-string))
+                                           "\n"))))
+          (should (string-match-p "acme" header))
+          (should (string-match-p "NEXT Project" header))))
+      ;; and on the heading that carries it, there is nobody to name
+      (org-upwell-bench (org-upwell-test--marker-at-id file "P"))
+      (with-current-buffer "*org-upwell*"
+        (let ((header (nth 1 (split-string (substring-no-properties (buffer-string))
+                                           "\n"))))
+          (should-not (string-match-p "from" header)))))))
+
+(ert-deftest org-upwell-test-a-guess-says-that-it-is-one ()
+  "Guessed from where the files are, which is a count: a heading whose
+downloads have piled up answers with the download directory.  So which way
+the answer came is part of the answer."
+  (org-upwell-test--with-dir
+    (let* ((dir (file-name-directory (org-upwell-file)))
+           (work (expand-file-name "downloads/" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T\n:END:\n")))
+      (make-directory work t)
+      (dolist (n '("a" "b"))
+        (let ((f (expand-file-name (concat n ".txt") work)))
+          (with-temp-file f (insert n))
+          (org-upwell-test--claim-to (list :path f :name (concat n ".txt"))
+                                     '("T") 'confirmed)))
+      (org-upwell-bench (org-upwell-test--marker-at-id file "T"))
+      (with-current-buffer "*org-upwell*"
+        (let ((header (nth 1 (split-string (substring-no-properties (buffer-string))
+                                           "\n"))))
+          (should (string-match-p "downloads" header))
+          (should (string-match-p (regexp-quote "main?") header)))))))
+
+(ert-deftest org-upwell-test-every-door-writes-the-same-property ()
+  "Three ways in, one act: whichever is used, the heading carries the same
+property afterwards and every reader of it answers the same way."
+  (org-upwell-test--with-dir
+    (let* ((dir (file-name-directory (org-upwell-file)))
+           (work (expand-file-name "acme/" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T\n:END:\n"))
+           (marker (org-upwell-test--marker-at-id file "T")))
+      (make-directory work t)
+      (org-upwell--set-working-directory marker work)
+      (should (equal (file-name-as-directory (expand-file-name work))
+                     (file-name-as-directory
+                      (expand-file-name
+                       (org-with-point-at marker
+                         (org-entry-get (point) "UPWELL_DIR"))))))
+      ;; and the readers agree
+      (should (eq 'marked (cdr (org-upwell-working-directory
+                                (org-upwell-domain marker)))))
+      ;; a path that is not a directory is refused rather than written
+      (let ((f (expand-file-name "not-a-dir.txt" dir)))
+        (with-temp-file f (insert "x"))
+        (should-error (org-upwell--set-working-directory marker f)
+                      :type 'user-error)))))
+
 (ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
   "The bench is the one place that opens in bulk, so it is the one place
 that has to say how many first.  `org-upwell-bench-open-max\=' is the number

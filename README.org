@@ -120,7 +120,7 @@ there are any, the line point is on when there are none.
 | ~e~ | Visit inside Emacs, in another window |
 | ~^~ | Go to the place this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
 | ~P~ | Keep that place, as an item of its own |
-| ~W~ | Say that this row's directory is where the work is done (writes ~:UPWELL_DIR:~, which is inherited) |
+| ~W~ | Say where this heading's work is done (writes ~:UPWELL_DIR:~, which is inherited); also from dired and from a heading |
 | ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
 | ~y~ | Copy another heading's items onto this one |
 | ~T~ | The whole family, as a grid |
@@ -244,16 +244,46 @@ org-protocol, for a browser (bookmarklet in
 
 * Where the work is done
 
-A heading can say where its work happens, and the bench marks that row
-~main~. It is ~:UPWELL_DIR:~ on the heading, which is inherited -- written
-on a project, every task under it answers the same way -- and it is the
-same property ~org-upwell-create~ puts a new file in, because those are one
-fact and not two. ~W~ on a directory row writes it.
+A heading can say where its work happens. It is ~:UPWELL_DIR:~ on the
+heading, which is inherited -- written on a project, every task under it
+answers the same way -- and it is the same property ~org-upwell-create~ puts
+a new file in, because those are one fact and not two.
+
+The bench says so in its header, under the title:
+
+#+begin_example
+Compare the three quotes  upwell.org
+work here  ~/Documents/project/acme/  main, from "Move to the new vendor"
+#+end_example
+
+In the header rather than among the rows. Every row of the listing is a
+stored item and every row command expects one, so a row for a directory
+nothing stored would look like the others and answer to half their keys --
+and it is not a material anyway. It is a fact about the heading, like the
+title it sits under. Where the directory *is* also a row, that row is
+marked ~main~ as well: the header says where, the mark says which.
+
+Inherited, the header names the heading it came from. ~org-entry-get~ with
+inheritance returns the value and not its source, and a directory nobody set
+on this heading is one they cannot account for.
 
 Unmarked, the bench guesses: the directory holding the most of this
 heading's files, shown as ~main?~. Free and often right, and it is a count
 -- a heading whose downloads have piled up guesses the download directory.
-~W~ is how to settle it.
+
+~org-upwell-work-here~ settles it, from wherever you are standing. Three
+ways in, one act -- whichever is used, the same property is written on the
+same heading:
+
+| on the bench, over a directory row | that row, this bench's heading; nothing asked |
+| in dired                           | the directory shown, and the heading is read  |
+| on an Org heading                  | that heading, and the directory is read       |
+
+Whichever half is in front of you is the half not worth asking about. The
+heading is read from Org's own refile targets rather than from the list ~C-c
+v~ offers: that list is what is in flight, and where the work is *done* is a
+fact about a project -- which carries no keyword and often holds nothing
+yet, so it is in none of it.
 
 ~M~ moves this row's file there. It is the one thing this package does to a
 file rather than about it, so it asks first, it says when the destination
