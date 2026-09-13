@@ -24,6 +24,10 @@
 ;; loaded whether or not the board exists.
 (defvar org-foresight-signal-functions)
 (defvar org-foresight-signal-kinds)
+(defvar org-foresight-signal-commands)
+;; The grid is where the unclaimed are settled; this file only names it.
+(declare-function org-upwell-matrix "org-upwell-matrix")
+(defvar org-foresight-signal-summarised)
 
 (defconst org-upwell-signal-unclaimed "Unclaimed")
 (defconst org-upwell-signal-stale "Broken path")
@@ -66,24 +70,55 @@
                 (and empty (cons org-upwell-signal-empty
                                  (delete-dups (nreverse empty)))))))))
 
+(defun org-upwell-plan-contribute ()
+  "Add this package\'s groups, kinds and answers to the board.
+
+Separate from `org-upwell-plan-setup\=' because the two are different
+questions: this is *what* is contributed, and that is *when*.  Wrapped
+together there was nowhere to stand to check the what -- the when is an
+`with-eval-after-load\=', and a test cannot make a feature present by
+saying so."
+  (add-to-list 'org-foresight-signal-functions
+               #'org-upwell-foresight-signals)
+  (dolist (pair `((,org-upwell-signal-unclaimed . owed)
+                  (,org-upwell-signal-stale . fact)
+                  (,org-upwell-signal-empty . fact)))
+    (unless (assoc (car pair) org-foresight-signal-kinds)
+      (setq org-foresight-signal-kinds
+            (append org-foresight-signal-kinds (list pair)))))
+  ;; The count, and the way in.  A store is what was seen, so most of what
+  ;; is in it was never work and the unclaimed run to hundreds: drawn row by
+  ;; row they would push the rest of the board off the screen, and nobody
+  ;; reads three hundred names on a page they came to for a verdict.  The
+  ;; number is the news.  Where it is settled is the grid, where those rows
+  ;; are already drawn with every cell empty and the key that answers a
+  ;; proposal attaches them.
+  (add-to-list 'org-foresight-signal-summarised org-upwell-signal-unclaimed)
+  (unless (assoc org-upwell-signal-unclaimed org-foresight-signal-commands)
+    (setq org-foresight-signal-commands
+          (append org-foresight-signal-commands
+                  (list (cons org-upwell-signal-unclaimed
+                              #'org-upwell-matrix))))))
+
 (defun org-upwell-plan-setup ()
   "Contribute signals when org-foresight is present."
   (with-eval-after-load 'org-foresight-plan
-    (add-to-list 'org-foresight-signal-functions
-                 #'org-upwell-foresight-signals)
-    (dolist (pair `((,org-upwell-signal-unclaimed . owed)
-                    (,org-upwell-signal-stale . fact)
-                    (,org-upwell-signal-empty . fact)))
-      (unless (assoc (car pair) org-foresight-signal-kinds)
-        (setq org-foresight-signal-kinds
-              (append org-foresight-signal-kinds (list pair)))))))
+    (org-upwell-plan-contribute)))
 
 (defun org-upwell-plan-teardown ()
   "Stop contributing signals."
   (when (boundp 'org-foresight-signal-functions)
     (setq org-foresight-signal-functions
           (delq #'org-upwell-foresight-signals
-                org-foresight-signal-functions))))
+                org-foresight-signal-functions)))
+  (when (boundp 'org-foresight-signal-summarised)
+    (setq org-foresight-signal-summarised
+          (delete org-upwell-signal-unclaimed
+                  org-foresight-signal-summarised)))
+  (when (boundp 'org-foresight-signal-commands)
+    (setq org-foresight-signal-commands
+          (assoc-delete-all org-upwell-signal-unclaimed
+                            org-foresight-signal-commands))))
 
 (provide 'org-upwell-plan)
 

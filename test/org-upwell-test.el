@@ -2823,8 +2823,8 @@ picture of a family with no way in is a picture you cannot act on."
                                  '("X") 'confirmed)
       (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
       (with-current-buffer org-upwell-matrix-buffer
-        (should-not (seq-find (lambda (m) (equal "elsewhere" (plist-get m :name)))
-                              org-upwell-matrix--rows))
+        (should-not (string-match-p "elsewhere"
+                                    (substring-no-properties (buffer-string))))
         (org-upwell-matrix-forward-column 3)
         (should (equal "NEXT Second" (nth 2 (org-upwell-matrix--grid-column))))
         (cl-letf (((symbol-function 'completing-read)
@@ -2833,8 +2833,8 @@ picture of a family with no way in is a picture you cannot act on."
                                    coll)
                          (error "elsewhere was not offered")))))
           (org-upwell-matrix-add))
-        (should (seq-find (lambda (m) (equal "elsewhere" (plist-get m :name)))
-                          org-upwell-matrix--rows)))
+        (should (string-match-p "elsewhere"
+                                (substring-no-properties (buffer-string)))))
       (let ((m (org-upwell-find :name "elsewhere")))
         (should (eq 'confirmed
                     (org-upwell-claim-status (plist-get m :claims) "B")))
@@ -3009,6 +3009,123 @@ is exactly when the rule has to hold."
         (should (eq (window-buffer (selected-window)) target))
         (with-current-buffer target
           (should (equal "NEXT Second" (org-get-heading t t t t))))))))
+
+(ert-deftest org-upwell-test-what-nothing-holds-is-drawn-under-the-grid ()
+  "Taking a thing off a heading is easy here -- the mark is in front of you.
+Putting one on meant naming it from memory in a prompt.  Remembering what is
+not on the screen is the expensive part, so the candidates are on it."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/held" :name "held")
+                                 '("A") 'confirmed)
+      (org-upwell-save (list :url "https://x/loose" :name "loose thing"))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let* ((text (substring-no-properties (buffer-string)))
+               (rule (string-search "attached to nothing" text))
+               (below (and rule (substring text rule))))
+          (should rule)
+          (should (string-match-p "loose thing" below))
+          ;; and only what nothing holds is down there
+          (should-not (string-match-p "held" below)))
+        ;; a row of this grid, which is what lets every row command reach it
+        (goto-char (point-min))
+        (should (search-forward "loose thing" nil t))
+        (beginning-of-line)
+        (should (equal "loose thing"
+                       (plist-get (org-upwell-matrix--item-at-point) :name)))))))
+
+(ert-deftest org-upwell-test-a-loose-row-is-attached-by-filling-a-cell ()
+  "Its cells are empty, which is what makes it usable without a command of
+its own: the key that answers a proposal is the key that attaches a thing
+nothing holds, because both are saying it belongs here."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/held" :name "held")
+                                 '("A") 'confirmed)
+      (org-upwell-save (list :url "https://x/loose" :name "loose thing"))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (search-forward "loose thing" nil t))
+        (beginning-of-line)
+        ;; column 2 is NEXT First
+        (org-upwell-matrix--goto-index 1)
+        (should (equal "NEXT First" (nth 2 (org-upwell-matrix--grid-column))))
+        (should-not (org-upwell-matrix--status
+                     (org-upwell-matrix--item-at-point)
+                     (org-upwell-matrix--grid-column)))
+        (org-upwell-matrix-keep))
+      (let ((m (org-upwell-find :name "loose thing")))
+        (should (eq 'confirmed
+                    (org-upwell-claim-status (plist-get m :claims) "A"))))
+      ;; and it has left the block, because nothing is no longer true of it
+      (with-current-buffer org-upwell-matrix-buffer
+        (let* ((text (substring-no-properties (buffer-string)))
+               (rule (string-search "attached to nothing" text)))
+          (should (string-match-p "loose thing" text))
+          (when rule
+            (should-not (string-match-p "loose thing"
+                                        (substring text rule)))))))))
+
+(ert-deftest org-upwell-test-no-rule-where-nothing-is-loose ()
+  "A rule over an empty block is a heading for nothing."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/held" :name "held")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (should-not (string-match-p "attached to nothing"
+                                    (substring-no-properties (buffer-string))))))))
+
+(ert-deftest org-upwell-test-both-blocks-are-one-grid ()
+  "Two blocks of one grid whose name columns disagreed would be two grids."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "short")
+                                 '("A") 'confirmed)
+      (org-upwell-save
+       (list :url "https://x/b"
+             :name "a loose name much longer than the held one above it"))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        ;; sized over the short held name alone, the long loose one is cut
+        (should (string-match-p
+                 (regexp-quote "a loose name much longer than the held one")
+                 (substring-no-properties (buffer-string))))))))
+
+;; Declared here as they are in org-upwell-plan.el: a bare `defvar' marks a
+;; symbol special only in the file it appears in, and this file let-binds them.
+(defvar org-foresight-signal-functions)
+(defvar org-foresight-signal-kinds)
+(defvar org-foresight-signal-commands)
+(defvar org-foresight-signal-summarised)
+
+(ert-deftest org-upwell-test-the-board-is-told-where-the-unclaimed-are-settled ()
+  "A store is what was seen, so most of what is in it was never work and the
+unclaimed run to hundreds.  Drawn row by row on the board they would push
+the rest of the page off the screen; the number is the news, and the grid is
+where it is settled -- so the group says both and neither alone."
+  (require 'org-upwell-plan)
+  ;; `org-upwell-plan-contribute' rather than `-setup': the setup only says
+  ;; when, and a test cannot make a feature present by saying so.
+  (let ((org-foresight-signal-functions nil)
+        (org-foresight-signal-kinds nil)
+        (org-foresight-signal-commands nil)
+        (org-foresight-signal-summarised nil))
+    (org-upwell-plan-contribute)
+    (should (member org-upwell-signal-unclaimed
+                    org-foresight-signal-summarised))
+    (should (eq 'org-upwell-matrix
+                (cdr (assoc org-upwell-signal-unclaimed
+                            org-foresight-signal-commands))))
+    ;; and switching off puts the board back as it was
+    (org-upwell-plan-teardown)
+    (should-not (member org-upwell-signal-unclaimed
+                        org-foresight-signal-summarised))
+    (should-not (assoc org-upwell-signal-unclaimed
+                       org-foresight-signal-commands))))
 
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,

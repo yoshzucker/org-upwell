@@ -344,6 +344,26 @@ or a column, so opening anywhere else would leave all of them answering
 which answers a ~?~ and fills an empty cell alike -- both are the same act,
 saying this belongs here.
 
+Under the grid comes everything no heading holds at all, drawn as rows with
+every cell empty:
+
+#+begin_example
+  ── attached to nothing: any column above could take these ─────────────
+  page               Vendor list (old)   example.com
+  xlsx               見積書_v3.xlsx      …/Downloads
+#+end_example
+
+They need no command of their own. Taking a thing off a heading was always
+easy here -- the mark is in front of you -- but putting one on meant naming
+it from memory in a prompt, and remembering what is not on the screen is the
+expensive half. ~c~ on one of those empty cells attaches it, which is the
+same key that answers a ~?~, because both are saying it belongs here. ~D~
+forgets it, which is what most of them are for: a store is what was seen,
+and most of what was seen was not work.
+
+Global rather than of this family, and that is what they are -- a thing
+attached to nothing is a thing any column here could take.
+
 ~a~ brings in something no heading in the family holds. The grid can only
 draw what some column already claims, so the file that belongs on this task
 but was filed under last month's is exactly the one missing from the

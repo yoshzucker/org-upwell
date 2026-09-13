@@ -70,9 +70,6 @@ heading, and two bands would be two claims of the same kind."
 (defvar-local org-upwell-matrix--columns nil
   "This grid's headings, as (NUMBER ID TITLE LEVEL MARKER).")
 
-(defvar-local org-upwell-matrix--rows nil
-  "This grid's items, in the order they are drawn.")
-
 (defvar-local org-upwell-matrix--root nil
   "The marker this grid was built from.")
 
@@ -122,6 +119,29 @@ for.  A heading with no id holds nothing, so it has nothing to show."
     ;; Directories first, as on the bench, and for the same reason.
     (append (seq-filter #'org-upwell-directory-item-p out)
             (seq-remove #'org-upwell-directory-item-p out))))
+
+(defun org-upwell-matrix--unclaimed ()
+  "Return the stored items no heading holds, ordered as the grid orders.
+
+Drawn under the grid because attaching one is the move the grid is worst
+at.  Taking a thing off a heading is easy here -- the mark is in front of
+you and `\\[org-upwell-matrix-unlink]\=' takes it off.  Putting one on meant
+`\\[org-upwell-matrix-add]\=', which offers a list of everything the heading
+does not hold: usable only by somebody who can already name what they are
+looking for.  Remembering what is not on the screen is the expensive part,
+and these are exactly the candidates.
+
+Global rather than of this family, and that is what they are: a thing
+attached to nothing is a thing any column here could take."
+  (let ((out (seq-filter #'org-upwell-unclaimed-p (org-upwell-items))))
+    (append (seq-filter #'org-upwell-directory-item-p out)
+            (seq-remove #'org-upwell-directory-item-p out))))
+
+(defun org-upwell-matrix--block-rule (text width)
+  "Return a full-width rule introducing TEXT, in WIDTH columns."
+  (let* ((lead (format "  %s %s " (make-string 2 ?\u2500) text))
+         (pad (max 2 (- width (string-width lead)))))
+    (propertize (concat lead (make-string pad ?\u2500) "\n") 'face 'shadow)))
 
 (defun org-upwell-matrix--status (item column)
   "Return ITEM's claim status on COLUMN, or nil.
@@ -644,8 +664,15 @@ the list above the grid, and in the echo area.
 column under the cursor, the same directions the indented list above the
 grid is drawn in -- and `f' reads another heading.
 
+Under the grid is what nothing holds at all.  Taking a thing off a heading
+is easy here -- the mark is in front of you -- but putting one on meant
+naming it from memory in a prompt, and remembering what is not on the
+screen is the expensive half.  Those rows are rows of this grid with every
+cell empty, so they need no command of their own: `c' on one fills it.
+
 `d' takes a thing off this heading, emptying the cell.  `c' keeps it
-here, which answers a `?' and fills an empty cell alike.  `a' brings in
+here, which answers a `?', fills an empty cell, and attaches a thing
+nothing held -- all three are saying it belongs here.  `a' brings in
 something no heading in this family holds, which is the one thing the
 grid cannot show you.  `y' copies a whole column onto another, the move
 that made this buffer necessary and the one that makes a mess of it.
@@ -686,13 +713,18 @@ characters is not a word.
       (let* ((inhibit-read-only t)
              (width (org-upwell-matrix--width))
              (columns (org-upwell-matrix--headings root))
-             (rows (org-upwell-with-store
-                    (org-upwell-matrix--items columns)))
-             (widths (org-upwell-matrix--widths rows columns width)))
+             (both (org-upwell-with-store
+                    (cons (org-upwell-matrix--items columns)
+                          (org-upwell-matrix--unclaimed))))
+             (rows (car both))
+             (loose (cdr both))
+             ;; Both sets sized together: two blocks of one grid whose name
+             ;; columns disagreed would be two grids.
+             (widths (org-upwell-matrix--widths (append rows loose)
+                                                columns width)))
         (erase-buffer)
         (setq org-upwell-matrix--root root
-              org-upwell-matrix--columns columns
-              org-upwell-matrix--rows rows)
+              org-upwell-matrix--columns columns)
         (insert (propertize (org-with-point-at root
                               (org-get-heading t t t t))
                             'face 'org-level-1)
@@ -711,6 +743,17 @@ characters is not a word.
           (insert (propertize (org-upwell-matrix--rule columns widths)
                               'face 'shadow))
           (dolist (m rows)
+            (org-upwell-matrix--insert-row m columns widths)))
+        ;; And what is attached to nothing.  Its cells are empty, which is
+        ;; what makes it usable without a command of its own: pressing
+        ;; `\\[org-upwell-matrix-keep]\=' on one fills it, and the thing is on
+        ;; that heading.
+        (when loose
+          (insert "\n")
+          (insert (org-upwell-matrix--block-rule
+                   "attached to nothing: any column above could take these"
+                   width))
+          (dolist (m loose)
             (org-upwell-matrix--insert-row m columns widths)))
         (insert "\n"
                 (org-upwell--legend
