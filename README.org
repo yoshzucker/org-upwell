@@ -221,11 +221,15 @@ A URL caught by hand goes through the same strip a sighting does. Identity is
 exact, so a title carrying =- Microsoft Edge= that a sighting would have
 trimmed makes one document into two rows that never meet.
 
-With ~org-upwell-agenda-follow~ on, moving in the agenda redraws the bench
-for the row. Org's own follow (~F~) opens the entry's file in another
-window as well; this one draws the listing and nothing else, so the frame
-stays as it was. Either way, ~TAB~ in the agenda puts the file in the
-window above the bench rather than in the strip.
+~org-upwell-follow-mode~ is the switch for whether this package draws by
+itself at all: in an Org buffer, and -- where ~org-upwell-agenda-follow~
+says so -- in the agenda. Off means off in both.
+
+Org's own follow (~F~) is a different thing and stays its own: it opens the
+entry's file in another window, this draws the listing and nothing else, and
+neither reads the other's switch. Both may be on, and then both happen.
+Either way, ~TAB~ in the agenda puts the file in the window above the bench
+rather than in the strip.
 
 From a launcher, a hotkey, or anything else that can run a command, to put
 whatever is being clocked on the bench:

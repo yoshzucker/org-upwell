@@ -1684,8 +1684,18 @@ the heading changes, or the bench is asked for again."
 (defcustom org-upwell-agenda-follow nil
   "When non-nil, moving in the agenda redraws the bench for the row.
 
+Under `org-upwell-follow-mode', which is the switch for whether this
+package draws anything by itself.  This says *where* it follows; that says
+*whether* it does.  Without the second reading, turning the mode off left
+the agenda still drawing and nothing to stop it with.
+
 Org's own follow (`F') is a separate thing and opens the entry's file in
-another window.  This one draws the bench and nothing else, so the frame
+another window.  It is not read here: a switch belonging to Org decides
+what Org does, and one belonging to this package decides what this package
+does.  Both may be on, and then both happen -- but neither turns the other
+on.
+
+This one draws the bench and nothing else, so the frame
 stays as it was: the agenda where it is, the listing where it is.  A day
 designed in the agenda and worked from the bench is what it is for."
   :type 'boolean
@@ -1694,10 +1704,11 @@ designed in the agenda and worked from the bench is what it is for."
 (defun org-upwell--agenda-follow (&rest _)
   "After agenda context action, show the bench for that heading.
 
-Runs when `org-upwell-agenda-follow' or Org's own follow mode is on.
-Does not open files; opening is done from the bench."
-  (when (and (or org-upwell-agenda-follow
-                 (bound-and-true-p org-agenda-follow-mode))
+Runs when `org-upwell-follow-mode' is on and `org-upwell-agenda-follow'
+says the agenda is one of the places it follows in.  Does not open files;
+opening is done from the bench."
+  (when (and org-upwell-follow-mode
+             org-upwell-agenda-follow
              (derived-mode-p 'org-agenda-mode))
     (when-let ((m (or (org-get-at-bol 'org-hd-marker)
                       (org-get-at-bol 'org-marker))))
@@ -1711,8 +1722,14 @@ Turning the mode on draws the bench.  Turning it off deletes the
 bench window.  Motion inside a heading does not redraw.  Does not
 open files; opening is done from the bench.
 
-Agenda follow (`F') is separate: with `org-upwell-mode' on, `F'
-already updates the bench from the agenda row."
+The switch for whether this package draws by itself at all: in an Org
+buffer, and -- where `org-upwell-agenda-follow' says so -- in the agenda.
+Off means off in both.  The two used to be gated separately, so turning
+this off left the agenda following with nothing to stop it.
+
+Org's own agenda follow (`F') is a different thing and stays its own: it
+opens the entry's file, this draws the bench, and neither reads the
+other's switch.  Both may be on."
   :global t
   :group 'org-upwell
   :lighter " Upwell-F"

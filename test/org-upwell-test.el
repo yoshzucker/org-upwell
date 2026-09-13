@@ -1644,11 +1644,14 @@ must not put it in the strip either.  It is cut in between."
 
 (ert-deftest org-upwell-test-bench-follows-the-agenda-on-its-own ()
   "Org's own follow opens the entry's file in another window, which is the
-movement this setting exists to do without."
+movement this setting exists to do without.  Under
+`org-upwell-follow-mode', which says whether this package draws by itself
+at all."
   (org-upwell-test--with-dir
    (let* ((file (org-upwell-test--write-journal
                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
           (mk (org-upwell-test--heading-marker file))
+          (org-upwell-follow-mode t)
           (org-upwell-agenda-follow t)
           (org-agenda-follow-mode nil)
           (agenda (get-buffer-create "*Org Agenda*"))
@@ -1664,6 +1667,48 @@ movement this setting exists to do without."
                       (lambda (m) (setq drawn m))))
              (org-upwell--agenda-follow))
            (should (equal drawn mk)))
+       (kill-buffer agenda)))))
+
+(ert-deftest org-upwell-test-off-means-off-in-the-agenda-too ()
+  "One switch for whether this package draws by itself.  The two ways in
+were gated separately, so turning the mode off stopped the Org buffers and
+left the agenda drawing with nothing to stop it.
+
+And Org\'s own follow does not turn this one on: a switch belonging to Org
+decides what Org does.  Both may be on, and then both happen."
+  (org-upwell-test--with-dir
+   (let* ((file (org-upwell-test--write-journal
+                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+          (mk (org-upwell-test--heading-marker file))
+          (agenda (get-buffer-create "*Org Agenda*"))
+          drawn)
+     (unwind-protect
+         (with-current-buffer agenda
+           (org-agenda-mode)
+           (let ((inhibit-read-only t))
+             (erase-buffer)
+             (insert (propertize "  Task\n" 'org-hd-marker mk)))
+           (goto-char (point-min))
+           (cl-letf (((symbol-function 'org-upwell--follow-draw)
+                      (lambda (m) (setq drawn m))))
+             ;; the mode off: nothing, however the rest is set
+             (let ((org-upwell-follow-mode nil)
+                   (org-upwell-agenda-follow t)
+                   (org-agenda-follow-mode t))
+               (org-upwell--agenda-follow)
+               (should-not drawn))
+             ;; the mode on, but not following in the agenda: still nothing
+             (let ((org-upwell-follow-mode t)
+                   (org-upwell-agenda-follow nil)
+                   (org-agenda-follow-mode t))
+               (org-upwell--agenda-follow)
+               (should-not drawn))
+             ;; both of ours: drawn, and Org\'s own switch was never needed
+             (let ((org-upwell-follow-mode t)
+                   (org-upwell-agenda-follow t)
+                   (org-agenda-follow-mode nil))
+               (org-upwell--agenda-follow)
+               (should (equal drawn mk)))))
        (kill-buffer agenda)))))
 
 (ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
