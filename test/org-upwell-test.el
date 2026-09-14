@@ -1936,6 +1936,65 @@ to happen is that many applications starting at once."
           (should (string-match-p "4" (or asked "")))
           (should (= 0 opened)))))))
 
+(ert-deftest org-upwell-test-a-bench-can-bring-one-thing-in ()
+  "The listing could only ever gain what the watcher happened to see under
+this heading, or what another heading handed over.  Standing on the bench
+that wants a document and naming it is the way round a person actually
+works, and it was the one direction missing."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/z" :name "wanted")
+                                 '("X") 'confirmed)
+      (org-upwell--bench-draw
+       (org-upwell-domain (org-upwell-test--marker-at-id file "A")))
+      (with-current-buffer "*org-upwell*"
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_p coll &rest _)
+                     (seq-find (lambda (l) (string-match-p "wanted" l)) coll))))
+          (org-upwell-bench-add))
+        (should (string-match-p
+                 "wanted" (substring-no-properties (buffer-string)))))
+      (should (eq 'confirmed
+                  (org-upwell-claim-status
+                   (plist-get (org-upwell-find :url "https://x/z") :claims)
+                   "A"))))))
+
+(ert-deftest org-upwell-test-bringing-one-in-needs-something-to-bring ()
+  "A prompt with nothing in it reads as a broken key.  Say which it is."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "held")
+                                 '("A") 'confirmed)
+      (org-upwell--bench-draw
+       (org-upwell-domain (org-upwell-test--marker-at-id file "A")))
+      (with-current-buffer "*org-upwell*"
+        (should-error (org-upwell-bench-add) :type 'user-error)))))
+
+(ert-deftest org-upwell-test-copying-to-another-heading-keeps-it-here ()
+  "`R\=' hands a thing over: it says no here.  The same document is often what
+two tasks are both about, and the only way to say so was to hand it over and
+fetch it back."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "shared")
+                                 '("A") 'confirmed)
+      (org-upwell--bench-draw
+       (org-upwell-domain (org-upwell-test--marker-at-id file "A")))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (re-search-forward "shared" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'org-upwell--reassign-candidates)
+                   (lambda () (list (cons "NEXT Second"
+                                          (org-upwell-test--marker-at-id
+                                           file "B")))))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest _) "NEXT Second")))
+          (org-upwell-bench-copy-to)))
+      (let ((claims (plist-get (org-upwell-find :url "https://x/a") :claims)))
+        (should (eq 'confirmed (org-upwell-claim-status claims "B")))
+        (should (eq 'confirmed (org-upwell-claim-status claims "A")))))))
+
 (ert-deftest org-upwell-test-r-reads-the-store-and-R-reassigns ()
   "`r\=' is the key a bench left open while the clock runs needs: the watcher
 keeps sighting things and the sync keeps attributing them, so the list goes
@@ -1943,7 +2002,11 @@ quietly out of date.  Reassign, which used to hold `r\=', moves up a case."
   (should (eq (lookup-key org-upwell-bench-mode-map (kbd "r"))
               #'org-upwell-bench-redraw))
   (should (eq (lookup-key org-upwell-bench-mode-map (kbd "R"))
-              #'org-upwell-bench-reassign)))
+              #'org-upwell-bench-reassign))
+  (should (eq (lookup-key org-upwell-bench-mode-map (kbd "i"))
+              #'org-upwell-bench-add))
+  (should (eq (lookup-key org-upwell-bench-mode-map (kbd "Y"))
+              #'org-upwell-bench-copy-to)))
 
 (ert-deftest org-upwell-test-redraw-takes-in-a-fresh-sighting ()
   "A sighting is not a claim: the timer is what intersects the two, and it
@@ -3285,7 +3348,7 @@ the ordinary case."
                                '("X") 'confirmed)
     (let ((labels (mapcar #'car
                           (org-upwell-with-store
-                           (org-upwell-matrix--candidates "A")))))
+                           (org-upwell--unheld-candidates "A")))))
       (should-not (seq-find (lambda (l) (string-match-p "held" l)) labels))
       (should-not (seq-find (lambda (l) (string-match-p "maybe" l)) labels))
       (should (seq-find (lambda (l) (string-match-p "refused" l)) labels))

@@ -421,26 +421,6 @@ number is what the list above the grid is for."
       (org-upwell-matrix-redraw)
       (message "org-upwell: %d copied onto \"%s\"" n (nth 2 target)))))
 
-(defun org-upwell-matrix--candidates (heading-id)
-  "Return (LABEL . ITEM) for store items HEADING-ID does not hold.
-
-Already held is left out because the answer for those is a cell, not a
-prompt: the row is on the grid and \[org-upwell-matrix-keep] is the key
-for it.  A rejection is not holding, so a thing said no to can be
-brought back -- saying no and changing your mind is the ordinary case."
-  (delq nil
-        (mapcar
-         (lambda (m)
-           (unless (memq (org-upwell-claim-status (plist-get m :claims)
-                                                  heading-id)
-                         '(provisional confirmed))
-             (cons (format "%-6s %s  %s"
-                           (org-upwell-form m)
-                           (or (plist-get m :name) "?")
-                           (or (org-upwell--item-where m) ""))
-                   m)))
-         (org-upwell-items))))
-
 (defun org-upwell-matrix-add ()
   "Put something this column does not hold onto it, and keep it.
 
@@ -454,7 +434,7 @@ because somebody chose it."
   (let* ((c (or (org-upwell-matrix--grid-column)
                 (user-error "Not on the grid; move right to a column")))
          (id (or (nth 1 c) (user-error "That heading holds nothing")))
-         (cands (org-upwell-with-store (org-upwell-matrix--candidates id))))
+         (cands (org-upwell-with-store (org-upwell--unheld-candidates id))))
     (unless cands
       (user-error "This heading already holds everything in the store"))
     (let* ((label (completing-read (format "Keep on \"%s\": " (nth 2 c))

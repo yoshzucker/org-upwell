@@ -122,13 +122,15 @@ there are any, the line point is on when there are none.
 | ~P~ | Keep that place, as an item of its own |
 | ~W~ | Say where this heading's work is done (writes ~:UPWELL_DIR:~, which is inherited); also from dired and from a heading |
 | ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
-| ~y~ | Copy another heading's items onto this one |
+| ~y~ | Copy another heading's items onto this one, all of them, provisionally |
 | ~T~ | The whole family, as a grid |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |
 | ~d~ | Take it off this heading, and have that stay said |
 | ~D~ | Delete the item from the store. The file is not touched |
-| ~R~ | Move it to another heading |
+| ~R~ | Move it to another heading: no here, yes there |
+| ~Y~ | Keep it on another heading /as well/. The same document is often what two tasks are both about |
+| ~i~ | Bring one stored thing onto this heading, whichever heading it is on now. The other way round from ~R~: stand where the thing is wanted |
 | ~+~ / ~L~ | Add a file / a URL to this heading |
 | ~o~ | Visit ~upwell.org~ at this item |
 | ~r~ / ~g~ | Take in whatever has been sighted since last time, then draw the listing again. Wanted while the clock runs: a sighting is not a claim, and the timer that makes one is a minute wide |
@@ -142,19 +144,21 @@ says only that there is no item there:
 
 #+begin_example
 on this line, or the marked ones
-    RET  open it            m    mark, move down
-    e    open in Emacs      u    unmark, move up
-    ^    go to its place    c    keep it here
-    P    keep its place     d    drop from here
-    W    work here          R    move elsewhere
+    RET  open it            u    unmark, move up
+    e    open in Emacs      c    keep it here
+    ^    go to its place    d    drop from here
+    P    keep its place     R    move elsewhere
+    W    work here          Y    keep there too
     M    move it here       D    forget entirely
+    m    mark, move down
 on the bench
-    a    open every one     L    add a URL
+    a    open every one     i    bring one in
     x    open the marked    y    copy from
-    t    invert marks       T    the family
-    U    unmark them all    o    the store file
-    r    read the store     q    hide the bench
-    +    add a file
+    t    invert marks       N    tidy the names
+    U    unmark them all    T    the family
+    r    read the store     o    the store file
+    +    add a file         q    hide the bench
+    L    add a URL
 Drop a file or URL here to pin it to this heading.
 #+end_example
 

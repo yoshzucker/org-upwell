@@ -1213,6 +1213,82 @@ recording at all.  The file on disk is not touched."
       (org-upwell--bench-redraw)
       (message "org-upwell: forgot %d" n))))
 
+(defun org-upwell--unheld-candidates (heading-id)
+  "Return (LABEL . ITEM) for stored things HEADING-ID does not hold.
+
+Already held is left out because the answer for those is the row itself:
+it is on the listing, and the keys that act on a row are for it.  A
+rejection is not holding, so a thing said no to can be brought back --
+saying no and changing your mind is the ordinary case.
+
+Shared by the bench and the grid.  \"What this heading has not got\" is one
+question however it is asked, and two lists of it would answer differently
+the first time either was changed."
+  (delq nil
+        (mapcar
+         (lambda (m)
+           (unless (memq (org-upwell-claim-status (plist-get m :claims)
+                                                  heading-id)
+                         '(provisional confirmed))
+             (cons (format "%-6s %s  %s"
+                           (org-upwell-form m)
+                           (or (plist-get m :name) "?")
+                           (or (org-upwell--item-where m) ""))
+                   m)))
+         (org-upwell-items))))
+
+(defun org-upwell-bench-add ()
+  "Bring something this heading does not hold onto it, and keep it.
+
+The other half of \\[org-upwell-bench-reassign].  A document belongs to two
+tasks often enough -- the spec the last one was written against is the spec
+this one is written against -- and until now the only way to say so from
+here was to go to the bench that had it and send it, which is the wrong way
+round when the heading you are standing on is the one that wants it.
+
+Claimed as an answer rather than a proposal, because somebody chose it."
+  (interactive)
+  (let* ((id (org-upwell--bench-heading-id))
+         (cands (org-upwell-with-store (org-upwell--unheld-candidates id))))
+    (unless cands
+      (user-error "org-upwell: this heading already holds everything stored"))
+    (let* ((label (completing-read "Keep here: " (mapcar #'car cands) nil t))
+           (chosen (cdr (assoc label cands)))
+           ;; Re-read: the snapshot above is from before the prompt, and
+           ;; `org-upwell-claim' writes the claims it is handed.
+           (m (or (org-upwell-find :id (plist-get chosen :id)) chosen)))
+      (org-upwell-claim m id 'confirmed)
+      (org-upwell--bench-redraw)
+      (message "org-upwell: %s kept here" (plist-get m :name)))))
+
+(defun org-upwell-bench-copy-to ()
+  "Put the marked things, or this one, on another heading as well.
+
+\\[org-upwell-bench-reassign] moves: it says no here and yes there, which is
+right when the thing was filed under the wrong task.  This one only says yes
+there.  The same document can be what two tasks are about, and a listing
+that could only hand things away could not say so."
+  (interactive)
+  (let* ((items (org-upwell--bench-target-items))
+         (cands (org-upwell--reassign-candidates))
+         (title (completing-read
+                 (format "Keep %s on: "
+                         (if (= 1 (length items))
+                             (plist-get (car items) :name)
+                           (format "%d things" (length items))))
+                 (mapcar #'car cands) nil t))
+         (dest (or (cdr (assoc title cands))
+                   (user-error "org-upwell: %S is not one of them" title)))
+         (to (org-upwell-heading-id dest))
+         (n 0))
+    (org-upwell-with-store
+     (dolist (m items)
+       (when-let ((fresh (org-upwell-find :id (plist-get m :id))))
+         (org-upwell-claim fresh to 'confirmed)
+         (setq n (1+ n)))))
+    (org-upwell--bench-redraw)
+    (message "org-upwell: %d kept on \"%s\" as well" n title)))
+
 (defun org-upwell-bench-reassign ()
   "Move the marked items, or this one, to another heading."
   (interactive)
@@ -1774,6 +1850,7 @@ is: the two things the row had to shorten."
     (org-upwell-bench-keep             row  "keep it here")
     (org-upwell-bench-drop             row  "drop from here")
     (org-upwell-bench-reassign         row  "move elsewhere")
+    (org-upwell-bench-copy-to          row  "keep there too")
     (org-upwell-bench-forget           row  "forget entirely")
     (org-upwell-bench-open-all         page "open every one")
     (org-upwell-bench-open-marked      page "open the marked")
@@ -1782,6 +1859,7 @@ is: the two things the row had to shorten."
     (org-upwell-bench-redraw           page "read the store")
     (org-upwell-bench-add-file         page "add a file")
     (org-upwell-bench-add-url          page "add a URL")
+    (org-upwell-bench-add              page "bring one in")
     (org-upwell-copy-from              page "copy from")
     (org-upwell-tidy-names             page "tidy the names")
     (org-upwell-matrix                 page "the family")
@@ -1847,6 +1925,8 @@ WIDTH is the columns available, defaulting to this buffer's window."
   (define-key map (kbd "D") #'org-upwell-bench-forget)
   (define-key map (kbd "r") #'org-upwell-bench-redraw)
   (define-key map (kbd "R") #'org-upwell-bench-reassign)
+  (define-key map (kbd "i") #'org-upwell-bench-add)
+  (define-key map (kbd "Y") #'org-upwell-bench-copy-to)
   (define-key map (kbd "+") #'org-upwell-bench-add-file)
   (define-key map (kbd "L") #'org-upwell-bench-add-url))
 
