@@ -1237,29 +1237,69 @@ Cut at a separator rather than anywhere: the longest run two names share
 is usually half a word, and stripping half a word leaves a name nobody
 can read.")
 
+(defcustom org-upwell-tidy-minimum 3
+  "How long a shared run has to be before it is worth offering.
+
+Two names beginning with the same letter share a run one character long,
+and every set of names shares a great many of those.  Short enough to catch
+a real prefix, long enough that the list is about something."
+  :type 'integer
+  :group 'org-upwell)
+
+(defun org-upwell--common-prefix (a b)
+  "Return the longest string A and B both begin with."
+  (let ((n (min (length a) (length b)))
+        (i 0))
+    (while (and (< i n) (eq (aref a i) (aref b i)))
+      (setq i (1+ i)))
+    (substring a 0 i)))
+
+(defun org-upwell--tidy-runs (names end)
+  "Return ((RUN . COUNT) ...) for the runs NAMES share at END.
+
+END is `head\=' or `tail\='.  A tail is a head read backwards, so the work
+is done once and the strings are reversed around it.
+
+Not cut at a separator.  Stopping the run at the first \" - \" found the
+shortest thing worth calling shared and stopped looking, and what a store
+full of one intranet\='s pages actually shares is longer than that -- often
+several words, sometimes most of the name.  A run that ends mid-word is
+offered like any other and passed over like any other; a run nobody was
+shown cannot be.
+
+Candidates come from adjacent pairs of the sorted names, which is where
+every shared beginning shows up, and each is then counted over all of
+them.  No candidate is a shorter version of another with the same reach:
+a shorter one is the point where two neighbours diverged, so at least one
+of that pair does not carry the longer one, and it is therefore shared by
+strictly more names."
+  (let* ((flip (lambda (s) (if (eq end 'head) s (reverse s))))
+         (names (sort (mapcar flip (seq-uniq names)) #'string<))
+         (seen (make-hash-table :test 'equal))
+         cands)
+    ;; every shared beginning is the common prefix of two neighbours
+    (dotimes (i (max 0 (1- (length names))))
+      (let ((run (org-upwell--common-prefix (nth i names) (nth (1+ i) names))))
+        (when (>= (length run) org-upwell-tidy-minimum)
+          (puthash run t seen))))
+    (maphash
+     (lambda (run _)
+       (let ((n (seq-count (lambda (name) (string-prefix-p run name)) names)))
+         (when (>= n org-upwell-tidy-threshold)
+           (push (cons run n) cands))))
+     seen)
+    (mapcar (lambda (c) (cons (funcall flip (car c)) (cdr c)))
+            (sort cands (lambda (x y) (> (length (car x)) (length (car y))))))))
+
 (defun org-upwell--tidy-affixes (names)
   "Return ((AFFIX END . COUNT) ...) for runs NAMES share, most first.
 
 END is `head\=' or `tail\='.  Counted over distinct names, so one document
 sighted a hundred times does not look like a hundred documents agreeing."
-  (let ((seen (make-hash-table :test 'equal))
-        out)
-    (dolist (name (seq-uniq names))
-      (dolist (sep org-upwell-tidy-separators)
-        (let ((at (string-search sep name)))
-          (when (and at (> at 0))
-            (cl-incf (gethash (cons (substring name 0 (+ at (length sep))) 'head)
-                              seen 0))))
-        (let ((at (and (string-match-p (regexp-quote sep) name)
-                       (string-match (concat (regexp-quote sep) "[^"
-                                             (substring sep 0 1) "]*\\'")
-                                     name))))
-          (when at
-            (cl-incf (gethash (cons (substring name at) 'tail) seen 0))))))
-    (maphash (lambda (k n)
-               (when (>= n org-upwell-tidy-threshold)
-                 (push (cons (car k) (cons (cdr k) n)) out)))
-             seen)
+  (let (out)
+    (dolist (end '(head tail))
+      (pcase-dolist (`(,run . ,n) (org-upwell--tidy-runs names end))
+        (push (cons run (cons end n)) out)))
     (sort out (lambda (a b) (> (cddr a) (cddr b))))))
 
 ;;;###autoload
@@ -1329,20 +1369,34 @@ future sighting, printed at the end where it can be read.  And with UNDO
      (unless found
        (user-error "org-upwell: nothing is shared by %d names or more"
                    org-upwell-tidy-threshold))
-     (let* ((labels (mapcar (lambda (f)
-                              (format "%-6s %3d  %s"
-                                      (if (eq (cadr f) 'head) "start" "end")
-                                      (cddr f) (car f)))
-                            found))
+     (let* ((table (mapcar (lambda (f)
+                             ;; The run in quotes, so a space at either end
+                             ;; of it is visible -- and so that it is not at
+                             ;; the edge of the label, where anything that
+                             ;; trims what it is handed would eat it.
+                             (cons (format "%-5s %3d  %S"
+                                           (if (eq (cadr f) 'head) "start" "end")
+                                           (cddr f) (car f))
+                                   f))
+                           found))
             (chosen (completing-read-multiple
-                     "Strip (comma-separated, TAB to see them): " labels nil t))
-            (picked (seq-filter (lambda (f)
-                                  (member (format "%-6s %3d  %s"
-                                                  (if (eq (cadr f) 'head)
-                                                      "start" "end")
-                                                  (cddr f) (car f))
-                                          chosen))
-                                found))
+                     "Strip (comma-separated, TAB to see them): "
+                     (mapcar #'car table) nil t))
+            ;; Looked up rather than rebuilt.  Formatting the label a second
+            ;; time and matching on it meant that any difference between the
+            ;; two -- a change to the format, whitespace trimmed on the way
+            ;; back -- selected nothing and reported it as nothing to do.
+            (picked (mapcar
+                     (lambda (label)
+                       (or (cdr (assoc label table))
+                           (cdr (assoc (string-trim label)
+                                       (mapcar (lambda (c)
+                                                 (cons (string-trim (car c))
+                                                       (cdr c)))
+                                               table)))
+                           (user-error "org-upwell: %S is not one of them"
+                                       label)))
+                     chosen))
             (n 0)
             moved rules)
        (dolist (f picked)

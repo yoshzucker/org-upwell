@@ -67,6 +67,15 @@ heading, and two bands would be two claims of the same kind."
 (defvar-local org-upwell-matrix--column-overlay nil
   "The overlay marking the cursor\\='s column in that list.")
 
+(defvar-local org-upwell-matrix--marked nil
+  "Ids of the rows marked here, for the commands that take several.
+
+The bench keeps one of these too, and for the same reason: a list of things
+to do the same thing to is shorter to make than it is to do one at a time.
+Held per buffer, and dropped on redraw only when the rows it names are
+gone -- marking three things and having them forgotten by the redraw that
+follows the first is not marking.")
+
 (defvar-local org-upwell-matrix--columns nil
   "This grid's headings, as (NUMBER ID TITLE LEVEL MARKER).")
 
@@ -227,7 +236,7 @@ Two lines once there are ten columns: a single digit cannot say which of
   "Insert the row for item M across COLUMNS, in WIDTHS."
   (let* ((name (or (plist-get m :name) "?"))
          (start (point)))
-    (insert "  ")
+    (insert (if (member (plist-get m :id) org-upwell-matrix--marked) "* " "  "))
     (insert (propertize (org-upwell--column (org-upwell-form m) 6) 'face 'shadow)
             "  ")
     ;; The grid between the form and the name, not past the path: a mark and
@@ -311,6 +320,8 @@ grid\", which is true and useless."
     (org-upwell-matrix-copy-column      column "copy this column")
     (org-upwell-matrix-goto             column "go to the heading")
     (org-upwell-matrix-rename           row    "rename it")
+    (org-upwell-matrix-toggle-mark      row    "mark, move down")
+    (org-upwell-matrix-unmark-all       page   "unmark them all")
     (org-upwell-matrix-forget           row    "forget it")
     (org-upwell-matrix-visit-store      row    "the store file")
     (org-upwell-tidy-names              page   "tidy the names")
@@ -434,6 +445,57 @@ because somebody chose it."
       (message "org-upwell: %s kept on \"%s\""
                (plist-get m :name) (nth 2 c)))))
 
+(defun org-upwell-matrix--target-items ()
+  "Return the marked rows, or the row at point.
+
+The bench\'s rule, because it is the same question: marks when there are
+any, this line when there are none.  A command that writes to the store is
+not the place to guess more widely than that."
+  (or (and org-upwell-matrix--marked
+           (seq-filter (lambda (m) (member (plist-get m :id)
+                                           org-upwell-matrix--marked))
+                       (org-upwell-matrix--rows-now)))
+      (when-let ((m (org-upwell-matrix--item-at-point)))
+        (list m))))
+
+(defun org-upwell-matrix--rows-now ()
+  "Return the items this grid is drawing, read off the buffer."
+  (let (out)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when-let ((m (get-text-property (line-beginning-position) 'org-upwell)))
+          (unless (seq-find (lambda (o) (equal (plist-get o :id)
+                                               (plist-get m :id)))
+                            out)
+            (push m out)))
+        (forward-line 1)))
+    (nreverse out)))
+
+(defun org-upwell-matrix-toggle-mark ()
+  "Mark or unmark the row point is on, and move to the next."
+  (interactive)
+  (let* ((m (or (org-upwell-matrix--item-at-point)
+                (user-error "No item on this line")))
+         (id (plist-get m :id))
+         (line (line-number-at-pos))
+         (column (current-column)))
+    (setq org-upwell-matrix--marked
+          (if (member id org-upwell-matrix--marked)
+              (delete id org-upwell-matrix--marked)
+            (cons id org-upwell-matrix--marked)))
+    (org-upwell-matrix-redraw)
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (move-to-column column)
+    (org-upwell-matrix-next-row)))
+
+(defun org-upwell-matrix-unmark-all ()
+  "Unmark every row.  No prompt: a grid is read, not filled in."
+  (interactive)
+  (setq org-upwell-matrix--marked nil)
+  (org-upwell-matrix-redraw))
+
 (defun org-upwell-matrix-rename ()
   "Rename this thing, in the store.  The file is not touched."
   (interactive)
@@ -447,14 +509,25 @@ because somebody chose it."
     (org-upwell-matrix-redraw)))
 
 (defun org-upwell-matrix-forget ()
-  "Delete this thing from the store, off every heading.  The file stays."
+  "Delete the marked things, or this one, from the store.  The files stay.
+
+Several at once because that is what the marks are for: a grid is read to
+find the things that should not be in the store, and they are found several
+at a time."
   (interactive)
-  (let ((m (or (org-upwell-matrix--item-at-point)
-               (user-error "No item on this line"))))
-    (when (yes-or-no-p (format "Forget %s everywhere?  The file stays.  "
-                               (plist-get m :name)))
-      (org-upwell-forget m)
-      (org-upwell-matrix-redraw))))
+  (let* ((items (or (org-upwell-matrix--target-items)
+                    (user-error "No item on this line")))
+         (n (length items)))
+    (when (yes-or-no-p
+           (if (= n 1)
+               (format "Forget %s everywhere?  The file stays.  "
+                       (plist-get (car items) :name))
+             (format "Forget %d things everywhere?  The files stay.  " n)))
+      (org-upwell-with-store
+       (dolist (m items) (org-upwell-forget m)))
+      (setq org-upwell-matrix--marked nil)
+      (org-upwell-matrix-redraw)
+      (message "org-upwell: %d forgotten" n))))
 
 (defun org-upwell-matrix-visit-store ()
   "Visit this thing's heading in the store."
@@ -624,6 +697,8 @@ The only practical way to read a column two characters wide."
   (define-key map (kbd "d") #'org-upwell-matrix-unlink)
   (define-key map (kbd "c") #'org-upwell-matrix-keep)
   (define-key map (kbd "a") #'org-upwell-matrix-add)
+  (define-key map (kbd "m") #'org-upwell-matrix-toggle-mark)
+  (define-key map (kbd "U") #'org-upwell-matrix-unmark-all)
   ;; Left is out and right is in, because the list above the grid prints the
   ;; family as an indented tree: a child sits to the right of its parent
   ;; there, so the key that moves to a child has to point the same way.  The

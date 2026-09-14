@@ -2543,6 +2543,62 @@ site putting its own name on every page it serves."
       (should (equal '(" - 社内ポータル") (mapcar #'car found)))
       (should (eq 'tail (cadr (car found)))))))
 
+(ert-deftest org-upwell-test-a-run-is-not-cut-at-a-separator ()
+  "Stopping the run at the first separator found the shortest thing worth
+calling shared and stopped looking.  What a store full of one intranet\='s
+pages shares is longer than that -- often several words."
+  (let ((org-upwell-tidy-threshold 3)
+        (org-upwell-tidy-minimum 3))
+    ;; the separator falls in the middle of what is really shared
+    (should (equal '("社内ポータル - 経費精算 - ")
+                   (mapcar #'car
+                           (org-upwell--tidy-affixes
+                            '("社内ポータル - 経費精算 - 申請"
+                              "社内ポータル - 経費精算 - 承認"
+                              "社内ポータル - 経費精算 - 明細"
+                              "見積比較")))))
+    ;; and at the other end
+    (should (equal '(" - 社内ポータル - 2026")
+                   (mapcar #'car
+                           (org-upwell--tidy-affixes
+                            '("規定集 - 社内ポータル - 2026"
+                              "出張申請 - 社内ポータル - 2026"
+                              "経費 - 社内ポータル - 2026"
+                              "見積比較")))))
+    ;; and where there is no separator to stop at
+    (should (equal '("AcmeProjectPlan")
+                   (mapcar #'car
+                           (org-upwell--tidy-affixes
+                            '("AcmeProjectPlanA" "AcmeProjectPlanB"
+                              "AcmeProjectPlanC" "Other")))))))
+
+(ert-deftest org-upwell-test-a-run-is-offered-at-its-full-length ()
+  "A candidate is the point where two names diverge, so it is as long as
+they agree.  Offering its shorter prefixes as well would be one answer
+repeated at every length, and they are not offered: a shorter run is where
+some other pair diverged, and is therefore shared by more names than this
+one -- never by the same."
+  (let ((org-upwell-tidy-threshold 2)
+        (org-upwell-tidy-minimum 3))
+    (should (equal '("AcmeProject")
+                   (mapcar #'car
+                           (org-upwell--tidy-affixes
+                            '("AcmeProjectA" "AcmeProjectB")))))))
+
+(ert-deftest org-upwell-test-a-choice-that-matches-nothing-says-so ()
+  "Formatting the label a second time and matching on it meant that any
+difference between the two selected nothing and reported it as nothing to
+do.  Whatever else happens, a choice nobody can find is not silence."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3)
+          (org-upwell-tidy--last nil))
+      (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                      "社内ポータル - 経費"))
+        (org-upwell-save (list :name name :url (concat "https://x/" name))))
+      (cl-letf (((symbol-function 'completing-read-multiple)
+                 (lambda (&rest _) (list "something nobody offered"))))
+        (should-error (org-upwell-tidy-names) :type 'user-error)))))
+
 (ert-deftest org-upwell-test-tidy-strips-only-what-was-chosen ()
   "Offered rather than stripped: losing real words is worse than keeping a
 few noisy ones."
@@ -2552,7 +2608,12 @@ few noisy ones."
                       "社内ポータル - 経費" "見積比較 - 社内用"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
       (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (&rest _) (list "start    3  社内ポータル - "))))
+                 (lambda (_prompt coll &rest _)
+                   ;; chosen from what was offered, not written out again:
+                   ;; a test that rebuilds the label tests the format
+                   (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
+                                       coll)
+                             (error "no 社内ポータル run was offered"))))))
         (org-upwell-tidy-names))
       (let ((names (sort (mapcar (lambda (m) (plist-get m :name))
                                  (org-upwell-items))
@@ -2574,7 +2635,12 @@ result\".  The moment it matters is the look at the bench straight after."
                       "社内ポータル - 経費" "見積比較 - 社内用"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
       (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (&rest _) (list "start    3  社内ポータル - "))))
+                 (lambda (_prompt coll &rest _)
+                   ;; chosen from what was offered, not written out again:
+                   ;; a test that rebuilds the label tests the format
+                   (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
+                                       coll)
+                             (error "no 社内ポータル run was offered"))))))
         (org-upwell-tidy-names))
       (should (member "規定集" (mapcar (lambda (m) (plist-get m :name))
                                        (org-upwell-items))))
@@ -2603,7 +2669,12 @@ has to be said once, at the end."
                       "社内ポータル - 経費"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
       (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (&rest _) (list "start    3  社内ポータル - ")))
+                 (lambda (_prompt coll &rest _)
+                   ;; chosen from what was offered, not written out again:
+                   ;; a test that rebuilds the label tests the format
+                   (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
+                                       coll)
+                             (error "no 社内ポータル run was offered")))))
                 ((symbol-function 'message)
                  (lambda (fmt &rest args)
                    (push (and fmt (apply #'format fmt args)) calls))))
@@ -3361,6 +3432,85 @@ where it is settled -- so the group says both and neither alone."
                         org-foresight-signal-summarised))
     (should-not (assoc org-upwell-signal-unclaimed
                        org-foresight-signal-commands))))
+
+(ert-deftest org-upwell-test-the-grid-forgets-what-was-marked ()
+  "A grid is read to find the things that should not be in the store, and
+they are found several at a time.  The bench\'s rule: marks when there are
+any, this line when there are none."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (dolist (n '("one" "two" "three"))
+        (org-upwell-test--claim-to (list :url (concat "https://x/" n) :name n)
+                                   '("A") 'confirmed))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (dolist (n '("one" "three"))
+          (goto-char (point-min))
+          (should (search-forward n nil t))
+          (beginning-of-line)
+          (org-upwell-matrix-toggle-mark))
+        (should (= 2 (length org-upwell-matrix--marked)))
+        ;; the marked rows say so
+        (goto-char (point-min))
+        (should (search-forward "one" nil t))
+        (beginning-of-line)
+        (should (looking-at-p "\\*"))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (org-upwell-matrix-forget))
+        ;; and the marks go with them
+        (should-not org-upwell-matrix--marked))
+      (should (equal '("two")
+                     (mapcar (lambda (m) (plist-get m :name))
+                             (org-upwell-items)))))))
+
+(ert-deftest org-upwell-test-with-no-marks-the-row-is-the-target ()
+  "Marks when there are any, this line when there are none -- so the key
+does the obvious thing before anybody has learnt about marking."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (dolist (n '("one" "two"))
+        (org-upwell-test--claim-to (list :url (concat "https://x/" n) :name n)
+                                   '("A") 'confirmed))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (search-forward "one" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (org-upwell-matrix-forget)))
+      (should (equal '("two")
+                     (mapcar (lambda (m) (plist-get m :name))
+                             (org-upwell-items)))))))
+
+(ert-deftest org-upwell-test-unmarking-leaves-everything-else-alone ()
+  "Marking is a list to act on, not an act."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (dolist (n '("one" "two"))
+        (org-upwell-test--claim-to (list :url (concat "https://x/" n) :name n)
+                                   '("A") 'confirmed))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (search-forward "one" nil t))
+        (beginning-of-line)
+        (org-upwell-matrix-toggle-mark)
+        (should (= 1 (length org-upwell-matrix--marked)))
+        ;; pressing it again on the same row takes the mark off
+        (goto-char (point-min))
+        (should (search-forward "one" nil t))
+        (beginning-of-line)
+        (org-upwell-matrix-toggle-mark)
+        (should-not org-upwell-matrix--marked)
+        ;; and unmark-all clears whatever is left
+        (goto-char (point-min))
+        (should (search-forward "two" nil t))
+        (beginning-of-line)
+        (org-upwell-matrix-toggle-mark)
+        (org-upwell-matrix-unmark-all)
+        (should-not org-upwell-matrix--marked))
+      ;; nothing was forgotten by any of it
+      (should (= 2 (length (org-upwell-items)))))))
 
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,

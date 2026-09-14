@@ -104,7 +104,7 @@ including ~expand=~ in the org-protocol URL.
 | ~org-upwell-create~ | New xlsx/pptx/…, claimed, no save-location prompt |
 | ~org-upwell-open-named~ | Completing-read over the store |
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
-| ~org-upwell-tidy-names~ | Offer the runs of text many stored names share, and strip the chosen ones |
+| ~org-upwell-tidy-names~ | Offer the runs of text many stored names share, and strip the chosen ones (~C-u~ puts the last lot back) |
 | ~org-upwell-copy-from~ | Copy another heading's items onto this one, provisionally |
 | ~org-upwell-matrix~ | One family of headings as a grid: rows are things, columns are headings, a cell is a claim |
 | (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
@@ -200,7 +200,15 @@ default =Profile N= is listed by name.
 with its own name is not guessable -- it is whatever the intranet in front
 of you calls itself -- so the store is asked instead: runs of text that
 ~org-upwell-tidy-threshold~ names or more share, at either end, offered with
-their counts. Offered, not stripped: losing real words is worse than keeping
+their counts.
+
+A run is as long as the names actually agree, not as long as the first
+separator. Cutting at =" - "= found the shortest thing worth calling shared
+and stopped looking, and what a store full of one intranet's pages shares is
+usually longer -- several words, sometimes most of the name. A run that ends
+mid-word is offered like any other and passed over like any other; a run
+nobody was shown cannot be. ~org-upwell-tidy-minimum~ is how short a run may
+be before it is not worth offering. Offered, not stripped: losing real words is worse than keeping
 a few noisy ones.
 
 Nothing is learned and nothing is stored. The candidates are counted afresh
@@ -373,6 +381,10 @@ The buffer opens on a cell, and ~h~ and ~l~ walk along the grid while ~j~
 and ~k~ change row and stay in the column. Every command here wants a cell
 or a column, so opening anywhere else would leave all of them answering
 "not on the grid", which is true and useless.
+
+~m~ marks the row and moves down, ~U~ unmarks them all, and ~D~ forgets what
+is marked -- or this row, where nothing is. A grid is read to find the things
+that should not be in the store, and they are found several at a time.
 
 ~d~ takes a thing off this heading, emptying the cell. ~c~ keeps it here,
 which answers a ~?~ and fills an empty cell alike -- both are the same act,
