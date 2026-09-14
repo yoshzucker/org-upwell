@@ -202,6 +202,14 @@ of you calls itself -- so the store is asked instead: runs of text that
 ~org-upwell-tidy-threshold~ names or more share, at either end, offered with
 their counts.
 
+One at a time. Taking a run off the names changes the names, so what the
+rest of them share is a different question -- and a list chosen in one go
+stops being true after its first item. It asks again after each, with the
+runs the last one left, and ~RET~ on an empty answer stops. What is offered
+is the run itself, with the end it sits at and how many names carry it shown
+beside it rather than written into it: a run has spaces in it, and a
+candidate with spaces asked for several at a time comes back as a fragment.
+
 A run is as long as the names actually agree, not as long as the first
 separator. Cutting at =" - "= found the shortest thing worth calling shared
 and stopped looking, and what a store full of one intranet's pages shares is

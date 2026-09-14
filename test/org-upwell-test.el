@@ -2524,6 +2524,20 @@ under a row that is no more the document than it is."
     (should (eq url (org-upwell--copy-of a (list url a b))))
     (should (eq url (org-upwell--copy-of b (list url a b))))))
 
+(defun org-upwell-test--pick-run (needle)
+  "Return a `completing-read' stand-in choosing the run matching NEEDLE once.
+
+Once, and then stopping: the command asks again after each run, because
+taking one off the names changes what the rest of them share."
+  (let ((done nil))
+    (lambda (_prompt coll &rest _)
+      (if done
+          ""
+        (setq done t)
+        (or (seq-find (lambda (l) (string-match-p needle l))
+                      (all-completions "" coll))
+            (error "no %s run was offered" needle))))))
+
 (ert-deftest org-upwell-test-tidy-offers-only-what-many-names-share ()
   "Two names sharing an opening is a coincidence; a dozen sharing one is the
 site putting its own name on every page it serves."
@@ -2634,6 +2648,79 @@ carries the real run."
     (dolist (entry table)
       (should (equal "2026" (car (cdr entry)))))))
 
+(ert-deftest org-upwell-test-the-runs-are-asked-again-after-each-one ()
+  "Taking a run off the names changes the names, so what the rest of them
+share is a different question.  A list chosen in one go stops being true
+after its first item."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3)
+          (org-upwell-tidy--last nil)
+          (round 0)
+          offers)
+      (dolist (n '("報告書 12 月次" "報告書 12 週次" "報告書 12 日次"
+                   "報告書 7 月次" "報告書 7 週次" "報告書 7 日次"))
+        (org-upwell-save (list :name n :url (concat "https://x/" n))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_p coll &rest _)
+                   (setq round (1+ round))
+                   (let ((offered (all-completions "" coll)))
+                     (push offered offers)
+                     ;; take the first run twice, then stop
+                     (if (> round 2) "" (car offered))))))
+        (org-upwell-tidy-names))
+      (setq offers (nreverse offers))
+      ;; the first round offers the run shared by all six
+      (should (equal "報告書 " (car (nth 0 offers))))
+      ;; the second is asked of the names the first one left
+      (should (member "12 " (nth 1 offers)))
+      (should-not (member "報告書 " (nth 1 offers)))
+      ;; and it stops when nothing is left that is worth offering: what the
+      ;; six names still share is "7 ", which is shorter than
+      ;; `org-upwell-tidy-minimum\'
+      (should (= 2 round))
+      (should (member "7 月次" (mapcar (lambda (m) (plist-get m :name))
+                                       (org-upwell-items)))))))
+
+(ert-deftest org-upwell-test-answering-with-nothing-strips-nothing ()
+  "RET on an empty answer is how the reader says they are done, and a
+command that is done has not quietly done something first."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3)
+          (org-upwell-tidy--last nil)
+          (asked 0))
+      (dolist (n '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                   "社内ポータル - 経費"))
+        (org-upwell-save (list :name n :url (concat "https://x/" n))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) (setq asked (1+ asked)) "")))
+        (org-upwell-tidy-names))
+      (should (= 1 asked))
+      (should-not org-upwell-tidy--last)
+      (should (equal '("社内ポータル - 出張申請" "社内ポータル - 経費"
+                       "社内ポータル - 規定集")
+                     (sort (mapcar (lambda (m) (plist-get m :name))
+                                   (org-upwell-items))
+                           #'string<))))))
+
+(ert-deftest org-upwell-test-a-run-with-a-space-survives-being-chosen ()
+  "A run has spaces in it -- that is most of what makes it a run and not a
+word -- and asking for several at once put those spaces where the frontend
+reads word boundaries, so what came back was a fragment."
+  (org-upwell-test--with-dir
+    (let ((org-upwell-tidy-threshold 3)
+          (org-upwell-tidy--last nil))
+      (dolist (n '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                   "社内ポータル - 経費"))
+        (org-upwell-save (list :name n :url (concat "https://x/" n))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (org-upwell-test--pick-run "社内ポータル")))
+        (org-upwell-tidy-names))
+      ;; the whole run went, spaces and all
+      (should (equal '("出張申請" "経費" "規定集")
+                     (sort (mapcar (lambda (m) (plist-get m :name))
+                                   (org-upwell-items))
+                           #'string<))))))
+
 (ert-deftest org-upwell-test-a-choice-that-matches-nothing-says-so ()
   "Formatting the label a second time and matching on it meant that any
 difference between the two selected nothing and reported it as nothing to
@@ -2644,8 +2731,8 @@ do.  Whatever else happens, a choice nobody can find is not silence."
       (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
                       "社内ポータル - 経費"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
-      (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (&rest _) (list "something nobody offered"))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "something nobody offered")))
         (should-error (org-upwell-tidy-names) :type 'user-error)))))
 
 (ert-deftest org-upwell-test-tidy-strips-only-what-was-chosen ()
@@ -2656,14 +2743,8 @@ few noisy ones."
       (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
                       "社内ポータル - 経費" "見積比較 - 社内用"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
-      (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (_prompt coll &rest _)
-                   ;; asked of the real collection, not of a list built
-                   ;; beside it: what is offered is what `all-completions'
-                   ;; says is offered
-                   (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
-                                       (all-completions "" coll))
-                             (error "no 社内ポータル run was offered"))))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (org-upwell-test--pick-run "社内ポータル")))
         (org-upwell-tidy-names))
       (let ((names (sort (mapcar (lambda (m) (plist-get m :name))
                                  (org-upwell-items))
@@ -2684,14 +2765,8 @@ result\".  The moment it matters is the look at the bench straight after."
       (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
                       "社内ポータル - 経費" "見積比較 - 社内用"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
-      (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (_prompt coll &rest _)
-                   ;; asked of the real collection, not of a list built
-                   ;; beside it: what is offered is what `all-completions'
-                   ;; says is offered
-                   (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
-                                       (all-completions "" coll))
-                             (error "no 社内ポータル run was offered"))))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (org-upwell-test--pick-run "社内ポータル")))
         (org-upwell-tidy-names))
       (should (member "規定集" (mapcar (lambda (m) (plist-get m :name))
                                        (org-upwell-items))))
@@ -2719,14 +2794,8 @@ has to be said once, at the end."
       (dolist (name '("社内ポータル - 規定集" "社内ポータル - 出張申請"
                       "社内ポータル - 経費"))
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
-      (cl-letf (((symbol-function 'completing-read-multiple)
-                 (lambda (_prompt coll &rest _)
-                   ;; asked of the real collection, not of a list built
-                   ;; beside it: what is offered is what `all-completions'
-                   ;; says is offered
-                   (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
-                                       (all-completions "" coll))
-                             (error "no 社内ポータル run was offered")))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (org-upwell-test--pick-run "社内ポータル"))
                 ((symbol-function 'message)
                  (lambda (fmt &rest args)
                    (push (and fmt (apply #'format fmt args)) calls))))

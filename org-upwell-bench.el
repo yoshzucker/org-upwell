@@ -1409,51 +1409,78 @@ reader is offered can be asked what it offers."
         (complete-with-action action (mapcar #'car table) string pred)))))
 
 (defun org-upwell-tidy--read (table)
-  "Read runs to strip from TABLE.  Return the chosen keys."
-  (completing-read-multiple
-   "Strip (comma-separated, TAB to see them): "
-   (org-upwell-tidy--collection table) nil t))
+  "Read one run to strip from TABLE.  Return its key, or nil to stop.
+
+One at a time, and `completing-read\' rather than the multiple kind.  A run
+has spaces in it -- that is most of what makes it a run and not a word --
+and asking for several at once put those spaces where the frontend reads
+word boundaries, so what came back was a fragment: \"-\", or \"end\".
+
+And a batch would be answering with a list that stopped being true after
+its first item.  Taking a run off the names changes the names, so what is
+shared by the rest is a different question; asked again each time, the
+answer is about the store as it now is."
+  (let ((key (completing-read
+              "Strip (RET to stop): "
+              (org-upwell-tidy--collection table) nil t nil nil "")))
+    (unless (string-empty-p key) key)))
+
+(defun org-upwell-tidy--strip (f)
+  "Take run F off every name that carries it.  Return ((ID . OLD) ...).
+
+Reads the store afresh: this is called again after each run, and the names
+it has to work on are the ones the last one left."
+  (let* ((affix (car f))
+         (end (cadr f))
+         moved)
+    (dolist (m (org-upwell-items) (nreverse moved))
+      (let* ((name (or (plist-get m :name) ""))
+             (new (cond
+                   ((and (eq end 'head) (string-prefix-p affix name))
+                    (string-trim (substring name (length affix))))
+                   ((and (eq end 'tail) (string-suffix-p affix name))
+                    (string-trim (substring name 0
+                                            (- (length name)
+                                               (length affix))))))))
+        (when (and new (not (string-empty-p new)) (not (equal new name)))
+          (push (cons (plist-get m :id) name) moved)
+          (org-upwell-save (plist-put (copy-sequence m) :name new)))))))
+
+(defun org-upwell-tidy--rule (f)
+  "Return the `org-upwell-title-noise\' regexp that would keep run F off."
+  (if (eq (cadr f) 'head)
+      (concat "\\`" (regexp-quote (car f)))
+    (concat (regexp-quote (car f)) "\\'")))
 
 (defun org-upwell-tidy--offer ()
-  "Offer the shared runs and strip the chosen ones.  Return how many moved."
+  "Offer the shared runs, one at a time, and strip what is chosen.
+
+Returns (COUNT RULES).  Asked again after each one, because taking a run
+off the names changes what the rest of them share."
   (org-upwell-with-store
-   (let* ((items (org-upwell-items))
-          (found (org-upwell--tidy-affixes
-                  (delq nil (mapcar (lambda (m) (plist-get m :name)) items)))))
-     (unless found
-       (user-error "org-upwell: nothing is shared by %d names or more"
-                   org-upwell-tidy-threshold))
-     (let* ((table (org-upwell-tidy--table found))
-            (chosen (org-upwell-tidy--read table))
-            (picked (mapcar
-                     (lambda (key)
-                       (or (cdr (assoc key table))
-                           (user-error "org-upwell: %S is not one of them" key)))
-                     chosen))
-            (n 0)
-            moved rules)
-       (dolist (f picked)
-         (let* ((affix (car f))
-                (end (cadr f)))
-           (dolist (m items)
-             (let* ((name (or (plist-get m :name) ""))
-                    (new (cond
-                          ((and (eq end 'head) (string-prefix-p affix name))
-                           (string-trim (substring name (length affix))))
-                          ((and (eq end 'tail) (string-suffix-p affix name))
-                           (string-trim (substring name 0
-                                                   (- (length name)
-                                                      (length affix)))))))) 
-               (when (and new (not (string-empty-p new)) (not (equal new name)))
-                 (push (cons (plist-get m :id) name) moved)
-                 (org-upwell-save (plist-put (copy-sequence m) :name new))
-                 (setq n (1+ n)))))
-           (push (if (eq end 'head)
-                     (concat "\\`" (regexp-quote affix))
-                   (concat (regexp-quote affix) "\\'"))
-                 rules)))
-       (setq org-upwell-tidy--last (nreverse moved))
-       (list n (nreverse rules))))))
+   (let ((n 0) moved rules (first t))
+     (catch 'done
+       (while t
+         (let* ((names (delq nil (mapcar (lambda (m) (plist-get m :name))
+                                         (org-upwell-items))))
+                (found (org-upwell--tidy-affixes names)))
+           (unless found
+             (when first
+               (user-error "org-upwell: nothing is shared by %d names or more"
+                           org-upwell-tidy-threshold))
+             (throw 'done nil))
+           (let* ((table (org-upwell-tidy--table found))
+                  (key (org-upwell-tidy--read table)))
+             (unless key (throw 'done nil))
+             (let ((f (or (cdr (assoc key table))
+                          (user-error "org-upwell: %S is not one of them" key))))
+               (setq first nil)
+               (let ((went (org-upwell-tidy--strip f)))
+                 (setq moved (append moved went)
+                       n (+ n (length went)))
+                 (push (org-upwell-tidy--rule f) rules)))))))
+     (setq org-upwell-tidy--last moved)
+     (list n (nreverse rules)))))
 
 (defun org-upwell-tidy--say (n rules)
   "Say that N names moved and which RULES would keep them short.
