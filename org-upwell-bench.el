@@ -684,12 +684,19 @@ Also reads the URL out of a minted office protocol, which has one inside it."
   "Return where ITEM is: the directory for a file, the host for a URL.
 
 Never the name again.  A bench with two lines called the same thing is
-answered by the directory, and by nothing else on the line."
+answered by the directory, and by nothing else on the line.
+
+Always a string.  `file-name-directory\' answers nil for a path with no
+directory part in it -- a bare name, or a drive-relative one like
+\"c:report.xlsx\" -- and a store holds whatever was sighted, including
+those.  Empty rather than the name, because the name is already on the
+line and repeating it there would say nothing twice."
   (let ((path (plist-get item :path))
         (url (or (plist-get item :url) (plist-get item :office))))
     (cond
-     (path (abbreviate-file-name
-            (directory-file-name (file-name-directory path))))
+     (path (if-let ((dir (file-name-directory path)))
+               (abbreviate-file-name (directory-file-name dir))
+             ""))
      (url (or (org-upwell--url-host url) url))
      (t ""))))
 

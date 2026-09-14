@@ -1804,6 +1804,34 @@ property afterwards and every reader of it answers the same way."
         (should-error (org-upwell--set-working-directory marker f)
                       :type 'user-error)))))
 
+(ert-deftest org-upwell-test-a-path-with-no-directory-still-has-a-where ()
+  "`file-name-directory\=' answers nil for a path with no directory part in
+it -- a bare name, or a drive-relative one like \"c:report.xlsx\" -- and a
+store holds whatever was sighted, including those.  Empty rather than the
+name: the name is already on the line."
+  (dolist (path '("report.xlsx" "c:report.xlsx" "x" ""))
+    (let ((where (org-upwell--item-where (list :path path :name "n"))))
+      (should (stringp where))
+      (should (equal "" where))))
+  ;; and a path that has one still answers with it
+  (should (equal "/tmp" (org-upwell--item-where (list :path "/tmp/a.txt")))))
+
+(ert-deftest org-upwell-test-one-unmeasurable-item-does-not-take-the-grid ()
+  "The grid sizes its columns over the whole store now -- what is held and
+what is attached to nothing -- so an item no heading ever claimed is
+measured on every draw.  One of them that could not be measured took the
+whole buffer with it, and nothing had claimed it to put it on screen."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "held")
+                                 '("A") 'confirmed)
+      (org-upwell-save (list :path "report.xlsx" :name "report.xlsx"))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let ((text (substring-no-properties (buffer-string))))
+          (should (string-match-p "held" text))
+          (should (string-match-p "report.xlsx" text)))))))
+
 (ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
   "The bench is the one place that opens in bulk, so it is the one place
 that has to say how many first.  `org-upwell-bench-open-max\=' is the number
