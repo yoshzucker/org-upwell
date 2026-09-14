@@ -200,8 +200,7 @@ not an extension, whatever it is sitting after a dot."
            (last (file-name-nondirectory (directory-file-name bare)))
            (ext (or (and named (file-name-extension named))
                     (file-name-extension last))))
-      (when (and ext (string-match-p "\\`[A-Za-z0-9]\\{1,5\\}\\'" ext))
-        (downcase ext)))))
+      (org-upwell--extension-p ext))))
 
 (defun org-upwell-office-app (url)
   "Return \"excel\", \"powerpoint\" or \"word\" for URL, or nil."
@@ -245,10 +244,22 @@ answered \"pptx\" would be stating something it had not seen.")
 Named because two things depend on it agreeing: the width the row is drawn
 at, and what `org-upwell-form\' will call an extension at all.")
 
-(defun org-upwell--form-word (ext)
-  "Return EXT downcased when it is short enough to be one, else nil."
+(defun org-upwell--extension-p (ext)
+  "Return EXT downcased when it could be an extension at all, else nil.
+
+Short enough for the column it is printed in, and made of the characters
+extensions are made of.  A name is not obliged to keep its dots for filing:
+a folder called \"会議資料.説明用\" has an extension of \"説明用\" by the only
+rule `file-name-extension\' has, and a URL can end in anything.  Printing
+either where the kind of thing goes answers a question nobody asked with a
+word that is not a kind.
+
+One rule, because it was two: the URL side had it and the path side did
+not, so the same dot was read differently depending on which it sat in."
   (and ext
-       (<= (string-width ext) org-upwell-form-width)
+       (string-match-p (format "\\`[A-Za-z0-9]\\{1,%d\\}\\'"
+                               org-upwell-form-width)
+                       ext)
        (downcase ext)))
 
 (defun org-upwell-form (item)
@@ -272,13 +283,11 @@ this column would answer a question nobody asked."
         (url (or (plist-get item :url) (plist-get item :office))))
     (cond
      ((org-upwell-directory-item-p item) "dir")
-     (path (or (org-upwell--form-word (file-name-extension path)) "file"))
+     (path (or (org-upwell--extension-p (file-name-extension path)) "file"))
      (url
       (let ((ext (org-upwell-url-extension url)))
         (cond
-         ((and (org-upwell--form-word ext)
-               (not (member ext org-upwell-page-extensions)))
-          (org-upwell--form-word ext))
+         ((and ext (not (member ext org-upwell-page-extensions))) ext)
          ((cdr (assoc (org-upwell-office-app url) org-upwell-office-forms)))
          (t "page"))))
      (t ""))))

@@ -3512,6 +3512,62 @@ does the obvious thing before anybody has learnt about marking."
       ;; nothing was forgotten by any of it
       (should (= 2 (length (org-upwell-items)))))))
 
+(ert-deftest org-upwell-test-the-headings-are-coloured-like-headings ()
+  "The list above the grid is an excerpt of an outline, so it is coloured
+like one.  The indent says the depth; the colour says it in the way the
+reader has been reading it all day."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (pcase-dolist (`(,title . ,face)
+                       '(("Project" . org-level-1)
+                         ("NEXT First" . org-level-2)
+                         ("NEXT Under first" . org-level-3)))
+          (goto-char (point-min))
+          (should (search-forward title nil t))
+          (should (eq face (get-text-property (match-beginning 0) 'face))))))))
+
+(ert-deftest org-upwell-test-a-long-name-does-not-take-the-directory ()
+  "A path cut to a handful of columns has no end left to keep, and two rows
+both called \"report.xlsx\" are told apart by nothing else on the line.  So
+the name gives way first: it keeps its beginning, which is most of what a
+name says."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      ;; long enough that the name would take the whole room if it could
+      (dolist (spec '(("/srv/share/2026/acme/kickoff"
+                       . "Vendor day kickoff deck rev3 final as circulated.pptx")
+                      ("/srv/share/2026/beta/reports"
+                       . "Quarterly board pack draft with appendix and notes.xlsx")))
+        (org-upwell-test--claim-to
+         (list :path (concat (car spec) "/" (cdr spec)) :name (cdr spec))
+         '("A") 'confirmed))
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (let ((text (substring-no-properties (buffer-string))))
+          ;; the part of the path that says which of the two it is
+          (should (string-match-p "acme/kickoff" text))
+          (should (string-match-p "beta/reports" text)))))))
+
+(ert-deftest org-upwell-test-the-widths-keep-the-frame ()
+  "Whatever is asked for, the row still has to fit the window it is drawn
+in: the name and the where together are the room, and the room is what is
+left after the grid."
+  (let* ((columns '((1 "a" "A" 1 nil) (2 "b" "B" 2 nil)))
+         ;; a long name *and* a long path: the floor only means anything
+         ;; where the where column has something to ask for
+         (rows (list (list :name (make-string 200 ?x)
+                           :path "/srv/share/2026/acme/kickoff/deck.pptx")))
+         (widths (org-upwell-matrix--widths rows columns 80))
+         (grid (max 1 (1- (* 2 (length columns)))))
+         (fixed (+ 2 grid 2 6 2 2)))
+    (should (<= (+ (car widths) (cdr widths)) (- 80 fixed)))
+    ;; and the where is not squeezed to nothing by a very long name
+    (should (>= (cdr widths) 16))))
+
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,
 which is not a word.  Numbers fit twenty -- and past nine a single digit

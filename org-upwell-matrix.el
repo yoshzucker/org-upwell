@@ -186,14 +186,20 @@ against the name.")
                                        (string-width
                                         (org-upwell--item-where m)))
                                      rows)))
-         (name (min asked-name (max 8 (- room 10)))))
+         ;; What the where column may ask for before the name is cut for it.
+         ;; A third of the room, and never less than this: a path cut to
+         ;; eight columns is a path nobody can read, and two rows both called
+         ;; "report.xlsx" are told apart by nothing else on the line.
+         (for-where (min asked-where 24 (max 16 (/ room 3))))
+         (name (min asked-name (max 8 (- room for-where)))))
     ;; Neither column is given more than it asks for: a wide frame should
     ;; not put a hand's width of blank between two short columns, and the
     ;; grid is what the room is for.
-    ;; Neither column is given more than it asks for, and the where column
-    ;; is held short besides: the grid is what this buffer is for, and every
-    ;; column of path between the name and the grid is one the eye crosses on
-    ;; every row.  The whole of a path is in the echo area.
+    ;;
+    ;; Where both want more than there is, the name gives way first.  It
+    ;; keeps its beginning, which is most of what a name says; a path keeps
+    ;; its end, and cut to a handful of columns there is no end left to keep.
+    ;; The whole of either is in the echo area.
     (cons name (max 6 (min asked-where 24 (- room name))))))
 
 (defun org-upwell-matrix--rule (columns _widths)
@@ -216,6 +222,15 @@ Two lines once there are ten columns: a single digit cannot say which of
                "\n"))
      lead (string-trim-right units) "\n")))
 
+(defun org-upwell-matrix--level-face (level)
+  "Return the face a heading at LEVEL is drawn with in an Org buffer.
+
+The list above the grid is an excerpt of an outline, so it is coloured like
+one.  The indent already says the depth; the colour says it in the way the
+reader has been reading it all day, in the file this was taken from."
+  (let ((n (max 1 (min 8 (or level 1)))))
+    (or (intern-soft (format "org-level-%d" n)) 'default)))
+
 (defun org-upwell-matrix--insert-columns (columns width)
   "Insert the list keying each number in COLUMNS to its heading, in WIDTH."
   (let (marks)
@@ -227,7 +242,9 @@ Two lines once there are ten columns: a single digit cannot say which of
                ;; of this line the grid shows, so it is the half to light up.
                (beg (+ (point) 2)))
           (insert lead
-                  (truncate-string-to-width (or title "?") room nil nil t))
+                  (propertize
+                   (truncate-string-to-width (or title "?") room nil nil t)
+                   'face (org-upwell-matrix--level-face level)))
           (push (cons beg (point)) marks)
           (insert (if id "" (propertize "  (no id)" 'face 'shadow)) "\n"))))
     (setq org-upwell-matrix--column-marks (nreverse marks))))
