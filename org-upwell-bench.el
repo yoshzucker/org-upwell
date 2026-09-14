@@ -658,9 +658,16 @@ window, C-c v puts it back.  After `q', the bench stays gone."
             (eq org-upwell--bench-intent 'wanted))
     (org-upwell--bench-draw (org-upwell-domain marker))))
 
-(defun org-upwell--pad (s width)
-  "Return S with spaces after it, to WIDTH columns."
-  (concat s (make-string (max 0 (- width (string-width s))) ?\s)))
+(defun org-upwell--column (s width)
+  "Return S in exactly WIDTH columns: cut if it is longer, padded if shorter.
+
+Both halves, because a column is a promise about where the next one starts.
+Padding alone kept it only for values that happened to be short enough, and
+one that was not pushed every column after it along its own row -- a grid
+whose marks no longer stand under their numbers.  What can be long here is
+not exotic: a folder name with a dot in it reads as a very long extension,
+and a provenance is whatever wrote the trace."
+  (truncate-string-to-width (or s "") width 0 ?\s t))
 
 (defun org-upwell--tail (s width)
   "Return S in WIDTH columns, keeping the end when it has to be cut.
@@ -892,7 +899,7 @@ across the break."
          (shown (truncate-string-to-width name name-w nil nil t))
          (start (point)))
     (insert (if marked "* " "  "))
-    (insert (propertize (org-upwell--pad (org-upwell-form m) 6)
+    (insert (propertize (org-upwell--column (org-upwell-form m) 6)
                         'face 'shadow
                         'help-echo "what kind of thing this is")
             "  ")
@@ -907,15 +914,15 @@ across the break."
     (insert
      (string-trim-right
       (concat
-       (propertize (org-upwell--pad
+       (propertize (org-upwell--column
                     (org-upwell--fit-where m where-w) where-w)
                    'face 'shadow)
        "  "
-       (propertize (org-upwell--pad (or (plist-get m :provenance) "") 6)
+       (propertize (org-upwell--column (or (plist-get m :provenance) "") 6)
                    'face 'shadow
                    'help-echo "how this file came to be here")
        "  "
-       (propertize (org-upwell--pad (org-upwell--ago m) 5) 'face 'shadow)
+       (propertize (org-upwell--column (org-upwell--ago m) 5) 'face 'shadow)
        (if (eq st 'provisional)
            (propertize "  provisional"
                        'face 'shadow

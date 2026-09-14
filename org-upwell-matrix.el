@@ -228,7 +228,7 @@ Two lines once there are ten columns: a single digit cannot say which of
   (let* ((name (or (plist-get m :name) "?"))
          (start (point)))
     (insert "  ")
-    (insert (propertize (org-upwell--pad (org-upwell-form m) 6) 'face 'shadow)
+    (insert (propertize (org-upwell--column (org-upwell-form m) 6) 'face 'shadow)
             "  ")
     ;; The grid between the form and the name, not past the path: a mark and
     ;; the thing it is about have to be read together, and every column
@@ -239,7 +239,7 @@ Two lines once there are ten columns: a single digit cannot say which of
                              " "))
                        columns " ")
             "  ")
-    (insert (org-upwell--pad
+    (insert (org-upwell--column
              (truncate-string-to-width name (car widths) nil nil t)
              (car widths))
             "  ")
@@ -453,7 +453,7 @@ because somebody chose it."
                (user-error "No item on this line"))))
     (when (yes-or-no-p (format "Forget %s everywhere?  The file stays.  "
                                (plist-get m :name)))
-      (org-upwell-forget (plist-get m :id))
+      (org-upwell-forget m)
       (org-upwell-matrix-redraw))))
 
 (defun org-upwell-matrix-visit-store ()

@@ -239,6 +239,18 @@ A word for the kind of thing, rather than a guessed extension: a
 `/:p:/\=' link may be a pptx or a ppt and says neither, and a column that
 answered \"pptx\" would be stating something it had not seen.")
 
+(defconst org-upwell-form-width 6
+  "Columns the form column is written to.
+
+Named because two things depend on it agreeing: the width the row is drawn
+at, and what `org-upwell-form\' will call an extension at all.")
+
+(defun org-upwell--form-word (ext)
+  "Return EXT downcased when it is short enough to be one, else nil."
+  (and ext
+       (<= (string-width ext) org-upwell-form-width)
+       (downcase ext)))
+
 (defun org-upwell-form (item)
   "Return a short word for what ITEM is: an extension, or a kind.
 
@@ -248,7 +260,11 @@ kind of thing it is.  Between them a row identifies something well enough
 to open it, or to decide not to.
 
 The extension when it is known, because that is the most anybody can say
-in six columns.  A word for the kind only when the extension is not
+in six columns -- and when it will not fit in them it is not an extension.
+`file-name-extension\' answers with whatever follows the last dot, so a
+folder called \"acme v1.2 handover\" has an extension of \"2 handover\".
+Reading that as the kind of thing a row is says nothing and costs the row
+its shape.  A word for the kind only when the extension is not
 there to be read: a SharePoint short link says which application opens it
 and nothing else.  A page is a page whatever it is called -- an .aspx in
 this column would answer a question nobody asked."
@@ -256,13 +272,13 @@ this column would answer a question nobody asked."
         (url (or (plist-get item :url) (plist-get item :office))))
     (cond
      ((org-upwell-directory-item-p item) "dir")
-     (path (or (and (file-name-extension path)
-                    (downcase (file-name-extension path)))
-               "file"))
+     (path (or (org-upwell--form-word (file-name-extension path)) "file"))
      (url
       (let ((ext (org-upwell-url-extension url)))
         (cond
-         ((and ext (not (member ext org-upwell-page-extensions))) ext)
+         ((and (org-upwell--form-word ext)
+               (not (member ext org-upwell-page-extensions)))
+          (org-upwell--form-word ext))
          ((cdr (assoc (org-upwell-office-app url) org-upwell-office-forms)))
          (t "page"))))
      (t ""))))

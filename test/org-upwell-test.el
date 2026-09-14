@@ -1832,6 +1832,75 @@ whole buffer with it, and nothing had claimed it to put it on screen."
           (should (string-match-p "held" text))
           (should (string-match-p "report.xlsx" text)))))))
 
+(ert-deftest org-upwell-test-a-column-is-exactly-its-width ()
+  "A column is a promise about where the next one starts.  Padding alone
+kept it only for values that happened to be short enough, and one that was
+not pushed every column after it along its own row."
+  (should (equal "ab    " (org-upwell--column "ab" 6)))
+  (should (equal "      " (org-upwell--column nil 6)))
+  (should (= 6 (string-width (org-upwell--column "a very long value" 6))))
+  (should (= 6 (string-width (org-upwell--column "日本語のとても長い値" 6)))))
+
+(ert-deftest org-upwell-test-a-word-too-long-is-not-the-word ()
+  "`file-name-extension' answers with whatever follows the last dot, so a
+folder called \"acme v1.2 handover\" has an extension of \"2 handover\".
+Reading that as the kind of thing a row is says nothing and costs the row
+its shape."
+  (should (equal "xlsx" (org-upwell-form (list :path "/tmp/a.xlsx"))))
+  ;; the folder itself, whose own name carries the dot
+  (should (equal "2 handover"
+                 (file-name-extension "/srv/share/acme v1.2 handover")))
+  (should (equal "file" (org-upwell-form
+                         (list :path "/srv/share/acme v1.2 handover"))))
+  (should (equal "file" (org-upwell-form (list :path "/tmp/plain"))))
+  ;; a directory says so whatever its name looks like
+  (should (equal "dir" (org-upwell-form
+                        (list :path "/srv/acme v1.2 handover" :kind "dir")))))
+
+(ert-deftest org-upwell-test-a-long-form-does-not-move-the-grid ()
+  "The marks have to stand under their numbers, whatever the rows are
+called: a record written before the kind field existed reads as a file, and
+its folder name is then read for an extension."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "short")
+                                 '("A") 'confirmed)
+      (org-upwell-test--claim-to
+       (list :path "/srv/share/acme v1.2 handover" :name "notes")
+       '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        ;; both are claimed to "NEXT First", which is column 2 of the grid.
+        ;; Read the character standing there rather than the column point
+        ;; can be moved to: moving to a fixed column says nothing about
+        ;; what was drawn at it.
+        (dolist (name '("short" "notes"))
+          (goto-char (point-min))
+          (should (search-forward name nil t))
+          (beginning-of-line)
+          (move-to-column (+ org-upwell-matrix-grid-column 2))
+          (should (equal (cdr (assq 'confirmed org-upwell-matrix-glyphs))
+                         (string (char-after)))))))))
+
+(ert-deftest org-upwell-test-forgetting-from-the-grid-removes-it ()
+  "`org-upwell-forget' takes the item and reads its id out of it.  Handed
+the id instead it found nothing to read, deleted nothing, and said nothing
+-- the row was still there after answering yes."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "doomed")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "B"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (search-forward "doomed" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+          (org-upwell-matrix-forget))
+        (should-not (string-match-p "doomed"
+                                    (substring-no-properties (buffer-string)))))
+      (should-not (org-upwell-find :name "doomed")))))
+
 (ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
   "The bench is the one place that opens in bulk, so it is the one place
 that has to say how many first.  `org-upwell-bench-open-max\=' is the number
