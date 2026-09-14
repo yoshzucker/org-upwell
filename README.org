@@ -245,6 +245,13 @@ trimmed makes one document into two rows that never meet.
 itself at all: in an Org buffer, and -- where ~org-upwell-agenda-follow~
 says so -- in the agenda. Off means off in both.
 
+It draws when the keys stop, not on every one of them:
+~org-upwell-follow-delay~ seconds of quiet, 0.2 by default, nil to draw at
+once. A draw reads the store and lays out a window, and a held-down ~j~ asks
+for one every thirty milliseconds; run as they arrive, the drawing falls
+behind the keys and point appears to jump in the buffer being read. A run of
+headings passed through costs one draw, for the heading stopped at.
+
 Org's own follow (~F~) is a different thing and stays its own: it opens the
 entry's file in another window, this draws the listing and nothing else, and
 neither reads the other's switch. Both may be on, and then both happen.

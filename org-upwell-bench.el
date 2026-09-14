@@ -2013,14 +2013,6 @@ the heading changes, or the bench is asked for again."
   (setq org-upwell--bench-intent 'dismissed)
   (org-upwell--quit-bench-window))
 
-(defun org-upwell--follow-update ()
-  "Redraw the bench if point moved to a different Org heading."
-  (unless (eq this-command 'org-upwell-bench-quit)
-    (when (and org-upwell-follow-mode
-               (derived-mode-p 'org-mode)
-               (not (org-before-first-heading-p)))
-      (org-upwell--follow-draw (point-marker)))))
-
 (defcustom org-upwell-agenda-follow nil
   "When non-nil, moving in the agenda redraws the bench for the row.
 
@@ -2041,6 +2033,68 @@ designed in the agenda and worked from the bench is what it is for."
   :type 'boolean
   :group 'org-upwell)
 
+(defcustom org-upwell-follow-delay 0.2
+  "Seconds of quiet before the bench follows point.  Nil draws at once.
+
+Idleness, not every command.  A draw reads the whole store and lays out a
+window, which is tens of milliseconds, and holding `j\=' down asks for one
+every thirty: the keys go on arriving, the drawing falls behind, and point
+appears to jump in the buffer being read -- the reader\='s own buffer made
+slow by a window beside it.  Waiting for the quiet means a run of headings
+passed through costs one draw, for the heading actually stopped at.
+
+`org-upwell-sync-interval\=' is idle for the same reason.  Arriving at a
+heading and reading what is under it are one movement, and the gap here is
+the pause inside it."
+  :type '(choice (const :tag "At once" nil) number)
+  :group 'org-upwell)
+
+(defvar org-upwell--follow-timer nil
+  "The draw waiting for the quiet, or nil.")
+
+(defun org-upwell--follow-tick ()
+  "Draw the bench for whatever point is on now.
+
+Now, not where it was when this was scheduled: the wait is there because
+more motion was expected, and what the reader stopped at is the answer.
+Reads the place out of the buffer rather than carrying a marker, so a run
+of headings leaves one draw and not a queue of stale ones.
+
+Does not ask whether the mode is on.  Both doors into here ask, and
+turning the mode off cancels what is waiting, so a tick that runs at all
+is one the mode asked for."
+  (setq org-upwell--follow-timer nil)
+  (cond
+   ((and (derived-mode-p 'org-mode)
+         (not (org-before-first-heading-p)))
+    (org-upwell--follow-draw (point-marker)))
+   ((and (derived-mode-p 'org-agenda-mode)
+         org-upwell-agenda-follow)
+    (when-let ((m (or (org-get-at-bol 'org-hd-marker)
+                      (org-get-at-bol 'org-marker))))
+      (org-upwell--follow-draw m)))))
+
+(defun org-upwell--follow-schedule ()
+  "Ask for a draw once the keys stop, cancelling the one already waiting."
+  (if (not org-upwell-follow-delay)
+      (org-upwell--follow-tick)
+    (when (timerp org-upwell--follow-timer)
+      (cancel-timer org-upwell--follow-timer))
+    (setq org-upwell--follow-timer
+          (run-with-idle-timer org-upwell-follow-delay nil
+                               #'org-upwell--follow-tick))))
+
+(defun org-upwell--follow-update ()
+  "Ask the bench to follow point, once the buffer is quiet.
+
+Runs after every command, so it decides nothing: whether the heading
+changed is `org-upwell--follow-draw\='s question, and asking it here would
+walk the store on every keystroke of ordinary typing."
+  (unless (eq this-command 'org-upwell-bench-quit)
+    (when (and org-upwell-follow-mode
+               (derived-mode-p 'org-mode))
+      (org-upwell--follow-schedule))))
+
 (defun org-upwell--agenda-follow (&rest _)
   "After agenda context action, show the bench for that heading.
 
@@ -2050,9 +2104,7 @@ opening is done from the bench."
   (when (and org-upwell-follow-mode
              org-upwell-agenda-follow
              (derived-mode-p 'org-agenda-mode))
-    (when-let ((m (or (org-get-at-bol 'org-hd-marker)
-                      (org-get-at-bol 'org-marker))))
-      (org-upwell--follow-draw m))))
+    (org-upwell--follow-schedule)))
 
 ;;;###autoload
 (define-minor-mode org-upwell-follow-mode
@@ -2079,6 +2131,9 @@ other's switch.  Both may be on."
         (add-hook 'post-command-hook #'org-upwell--follow-update)
         (org-upwell--follow-update))
     (remove-hook 'post-command-hook #'org-upwell--follow-update)
+    (when (timerp org-upwell--follow-timer)
+      (cancel-timer org-upwell--follow-timer)
+      (setq org-upwell--follow-timer nil))
     (org-upwell--quit-bench-window)))
 
 (defun org-upwell--window-above-bench ()

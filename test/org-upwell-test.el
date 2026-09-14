@@ -50,6 +50,10 @@
            (delete-window w)))
        (kill-buffer b))
      (unwind-protect (progn ,@body)
+       ;; Cancelled rather than let-bound away: binding the variable loses
+       ;; the handle on the timer, and the draw it holds then fires in the
+       ;; middle of whichever test happens to be running.
+       (cancel-function-timers #'org-upwell--follow-tick)
        (dolist (b (buffer-list))
          (when (and (buffer-file-name b)
                     (string-prefix-p dir (buffer-file-name b)))
@@ -720,6 +724,7 @@ bench as a heading change, so each q split the root once more."
          ;; The command after q -- j on the same heading -- used to
          ;; treat the hidden bench as a change and split the root.
          (let ((org-upwell-follow-mode t)
+               (org-upwell-follow-delay nil)
                (this-command 'next-line))
            (with-current-buffer (marker-buffer a)
              (org-mode)
@@ -727,6 +732,85 @@ bench as a heading change, so each q split the root once more."
              (org-upwell--follow-update)))
          (should-not (get-buffer-window "*org-upwell*" nil))
          (should (= n after-show)))))))
+
+(ert-deftest org-upwell-test-a-run-of-headings-costs-one-draw ()
+  "Held-down motion asked for a draw every heading it passed through.  Each
+one reads the store and lays out a window, the keys go on arriving, and
+point appears to jump in the buffer being read.  What is wanted is the
+heading stopped at, and one draw of it."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--write-journal
+                  (concat "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\n"
+                          "* NEXT Two\n:PROPERTIES:\n:ID: B\n:END:\n"
+                          "* NEXT Three\n:PROPERTIES:\n:ID: C\n:END:\n")))
+           (drawn 0))
+      (cl-letf (((symbol-function 'org-upwell--bench-draw)
+                 (lambda (_d) (setq drawn (1+ drawn)))))
+        (let ((org-upwell-follow-mode t)
+              (org-upwell-follow-delay 0.2)
+              (this-command 'next-line))
+          (with-current-buffer (find-file-noselect file)
+            (org-mode)
+            (dolist (id '("A" "B" "C"))
+              (goto-char (org-upwell-test--marker-at-id file id))
+              (org-upwell--follow-update))
+            (should (= 0 drawn))
+            (should (timerp org-upwell--follow-timer))
+            (should (eq #'org-upwell--follow-tick
+                        (timer--function org-upwell--follow-timer)))
+            ;; One waiting draw, not one per heading passed: each command
+            ;; cancels the last.  Three left waiting would be three draws
+            ;; the moment the keys stopped, which is the thing complained of.
+            (should (= 1 (seq-count (lambda (tm)
+                                      (eq (timer--function tm)
+                                          #'org-upwell--follow-tick))
+                                    timer-idle-list)))
+            (org-upwell--follow-tick)
+            (should (= 1 drawn))
+            (should (equal "C" org-upwell--follow-seen))))))))
+
+(ert-deftest org-upwell-test-the-wait-reads-where-point-ended-up ()
+  "The draw was put off because more motion was expected, so the place it
+draws is the one point is on when it runs -- not the one it was asked
+from, which by then is a heading gone past."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--write-journal
+                 (concat "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\n"
+                         "* NEXT Two\n:PROPERTIES:\n:ID: B\n:END:\n")))
+          (seen nil))
+      (cl-letf (((symbol-function 'org-upwell--bench-draw)
+                 (lambda (d) (setq seen (plist-get d :id)))))
+        (let ((org-upwell-follow-mode t)
+              (org-upwell-follow-delay 0.2)
+              (this-command 'next-line))
+          (with-current-buffer (find-file-noselect file)
+            (org-mode)
+            (goto-char (org-upwell-test--marker-at-id file "A"))
+            (org-upwell--follow-update)
+            (goto-char (org-upwell-test--marker-at-id file "B"))
+            (org-upwell--follow-tick)
+            (should (equal "B" seen))))))))
+
+(ert-deftest org-upwell-test-turning-follow-off-cancels-the-waiting-draw ()
+  "Off means the window goes.  A draw still waiting would put it back a
+fifth of a second later, which reads as the mode not having a switch."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--write-journal
+                 "* NEXT One\n:PROPERTIES:\n:ID: A\n:END:\n")))
+      (unwind-protect
+          (let ((org-upwell-follow-delay 0.2)
+                (this-command 'next-line))
+            (org-upwell-follow-mode 1)
+            (with-current-buffer (find-file-noselect file)
+              (org-mode)
+              (goto-char (org-upwell-test--marker-at-id file "A"))
+              (org-upwell--follow-update)
+              (should (timerp org-upwell--follow-timer))
+              (let ((waiting org-upwell--follow-timer))
+                (org-upwell-follow-mode -1)
+                (should-not org-upwell--follow-timer)
+                (should-not (memq waiting timer-idle-list)))))
+        (org-upwell-follow-mode -1)))))
 
 (ert-deftest org-upwell-test-follow-after-quit-still-tracks-a-new-heading ()
   "Dismissing the bench must not disable follow: a new heading still draws."
@@ -1654,6 +1738,7 @@ at all."
           (org-upwell-follow-mode t)
           (org-upwell-agenda-follow t)
           (org-agenda-follow-mode nil)
+          (org-upwell-follow-delay nil)
           (agenda (get-buffer-create "*Org Agenda*"))
           drawn)
      (unwind-protect
@@ -1680,6 +1765,7 @@ decides what Org does.  Both may be on, and then both happen."
    (let* ((file (org-upwell-test--write-journal
                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
           (mk (org-upwell-test--heading-marker file))
+          (org-upwell-follow-delay nil)
           (agenda (get-buffer-create "*Org Agenda*"))
           drawn)
      (unwind-protect
