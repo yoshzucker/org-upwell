@@ -186,12 +186,18 @@ against the name.")
                                        (string-width
                                         (org-upwell--item-where m)))
                                      rows)))
-         ;; What the where column may ask for before the name is cut for it.
-         ;; A third of the room, and never less than this: a path cut to
-         ;; eight columns is a path nobody can read, and two rows both called
+         ;; What the where column may take before the name is cut for it: a
+         ;; third of the room, and never less than this many columns.  A path
+         ;; cut to eight is a path nobody can read, and two rows both called
          ;; "report.xlsx" are told apart by nothing else on the line.
-         (for-where (min asked-where 24 (max 16 (/ room 3))))
-         (name (min asked-name (max 8 (- room for-where)))))
+         ;;
+         ;; A share rather than a number.  Held to a fixed two dozen it was
+         ;; the room that bound the column on a narrow frame and the number
+         ;; on a wide one, so widening the window stopped giving the path any
+         ;; more of it -- and a wide window is exactly where there is room to
+         ;; spare.  It still never takes more than the longest path asks for.
+         (cap (max 16 (/ room 3)))
+         (name (min asked-name (max 8 (- room (min asked-where cap))))))
     ;; Neither column is given more than it asks for: a wide frame should
     ;; not put a hand's width of blank between two short columns, and the
     ;; grid is what the room is for.
@@ -200,7 +206,7 @@ against the name.")
     ;; keeps its beginning, which is most of what a name says; a path keeps
     ;; its end, and cut to a handful of columns there is no end left to keep.
     ;; The whole of either is in the echo area.
-    (cons name (max 6 (min asked-where 24 (- room name))))))
+    (cons name (max 6 (min asked-where cap (- room name))))))
 
 (defun org-upwell-matrix--rule (columns _widths)
   "Return the line of column numbers standing over the grid, or lines.

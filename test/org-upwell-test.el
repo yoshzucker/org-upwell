@@ -3555,18 +3555,30 @@ name says."
 (ert-deftest org-upwell-test-the-widths-keep-the-frame ()
   "Whatever is asked for, the row still has to fit the window it is drawn
 in: the name and the where together are the room, and the room is what is
-left after the grid."
+left after the grid.
+
+And the share the path may take is a share, not a number.  Held to a fixed
+one it was the room that bound the column on a narrow frame and the number
+on a wide one, so widening the window stopped giving the path any more of
+it."
   (let* ((columns '((1 "a" "A" 1 nil) (2 "b" "B" 2 nil)))
+         (grid (max 1 (1- (* 2 (length columns)))))
+         (fixed (+ 2 grid 2 6 2 2))
          ;; a long name *and* a long path: the floor only means anything
          ;; where the where column has something to ask for
          (rows (list (list :name (make-string 200 ?x)
-                           :path "/srv/share/2026/acme/kickoff/deck.pptx")))
-         (widths (org-upwell-matrix--widths rows columns 80))
-         (grid (max 1 (1- (* 2 (length columns)))))
-         (fixed (+ 2 grid 2 6 2 2)))
-    (should (<= (+ (car widths) (cdr widths)) (- 80 fixed)))
-    ;; and the where is not squeezed to nothing by a very long name
-    (should (>= (cdr widths) 16))))
+                           :path "/srv/share/2026/quarter/acme/kickoff/deck.pptx")))
+         (at (lambda (w) (org-upwell-matrix--widths rows columns w))))
+    (dolist (w '(80 160))
+      (let ((widths (funcall at w)))
+        (should (<= (+ (car widths) (cdr widths)) (- w fixed)))
+        ;; not squeezed to nothing by a very long name
+        (should (>= (cdr widths) 16))))
+    ;; a wider window gives the path more of itself
+    (should (> (cdr (funcall at 160)) (cdr (funcall at 80))))
+    ;; but never more than the longest path asks for
+    (should (<= (cdr (funcall at 400))
+                (string-width (org-upwell--item-where (car rows)))))))
 
 (ert-deftest org-upwell-test-twenty-columns-fit-and-are-numbered ()
   "Titles as column headers fit six or eight, cut to four characters each,
