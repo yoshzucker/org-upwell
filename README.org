@@ -121,8 +121,11 @@ there are any, the line point is on when there are none.
 | ~^~ | Go to the place this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
 | ~P~ | Keep that place, as an item of its own |
 | ~W~ | Say where this heading's work is done (writes ~:UPWELL_DIR:~, which is inherited); also from dired and from a heading |
+| ~w~ | Open that working directory in dired, from anywhere on the bench. It is the one place somebody goes to over and over, and a key that first needs the cursor put on the right line is a key that needs the line found |
+| ~RET~ / ~^~ /on the header line/ | The same two acts on the line that names it: open it, or go and stand in it. It is not a row -- the row commands all want a stored item -- but it names a place, and a listing that names a place you cannot open from it has to be left to be used |
 | ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
 | ~y~ | Copy another heading's items onto this one, all of them, provisionally |
+| ~f~ | Lay another heading out on this bench. Reading one heading's listing is when the next one comes to mind, and the way to it was to leave. ~f~ on the grid is the same act |
 | ~T~ | The whole family, as a grid |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |
@@ -152,9 +155,10 @@ on this line, or the marked ones
     M    move it here       D    forget entirely
     m    mark, move down
 on the bench
-    a    open every one     i    bring one in
-    x    open the marked    y    copy from
-    t    invert marks       N    tidy the names
+    w    go to the work     i    bring one in
+    a    open every one     y    copy from
+    x    open the marked    N    tidy the names
+    t    invert marks       f    another heading
     U    unmark them all    T    the family
     r    read the store     o    the store file
     +    add a file         q    hide the bench
@@ -437,9 +441,19 @@ everything in the store this heading does not hold -- including things
 refused before, because changing your mind is the ordinary case -- and
 claims the chosen one as an answer, since somebody chose it.
 
-~TAB~ (~C-i~) and ~RET~ go to the heading this column is, in a window that
-is not the grid -- the same act the agenda puts on ~TAB~, and the grid keeps
-standing.
+Three keys, because "go there" is three questions on a grid. ~RET~ opens the
+thing. ~TAB~ (~C-i~) goes to /its own heading in the store/, where its name,
+how it came to be seen and every claim on it are written -- the record the
+row is drawn from, and the only place it can be edited by hand. ~v~ goes to
+/the heading this column is/, which is a task in a file of your own. Each
+lands in a window that is not the grid, and the grid keeps standing.
+
+~RET~ opens the thing on this row and ~^~ goes to the directory it lives in,
+both the way the bench does: the line names a thing, and that is the key for
+opening what a line names. A grid says which headings hold a thing and where
+it is, and neither settles whether it is the right one; opening it is how
+that gets settled, and going to a bench to do it means leaving the question
+the grid was opened to ask.
 
 ~y~ copies a whole column onto another, which is the move that made this
 buffer necessary and the one that makes a mess of it. ~R~ renames a thing

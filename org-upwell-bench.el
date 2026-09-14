@@ -254,19 +254,31 @@ the directory around it."
 (defun org-upwell-open-directory (&optional item)
   "Open the directory ITEM lives in, with ITEM selected where the OS can.
 
-The bench answers \"which of these two same-named files is it?\" with the
-directory; this is how to go and stand in it.  A URL lives in no directory
+A listing answers \"which of these two same-named files is it?\" with the
+directory; this is how to go and stand in it.  Read off the row at point
+when ITEM is nil, which works on the bench and on the grid alike: a row
+carries its item on the same text property in both.  A URL lives in no directory
 and says so.  A path that moved is resolved first, so the directory opened
 is the one the file is in now."
   (interactive)
-  (let* ((m (or item
-                (org-upwell--bench-item-at-point)
-                (user-error "No item on this line")))
-         (app (org-upwell-resolve m)))
-    (unless (eq (plist-get app :kind) 'path)
-      (user-error "org-upwell: %s is not a file on this machine"
-                  (or (plist-get m :name) "this item")))
-    (org-upwell--reveal-external (plist-get app :value))))
+  (let ((m (or item (org-upwell--bench-item-at-point))))
+    (if-let ((place (and (not m) (org-upwell--place-at-point))))
+        (org-upwell--reveal-external (directory-file-name place))
+      (unless m (user-error "No item on this line"))
+      (let ((app (org-upwell-resolve m)))
+        (unless (eq (plist-get app :kind) 'path)
+          (user-error "org-upwell: %s is not a file on this machine"
+                      (or (plist-get m :name) "this item")))
+        (org-upwell--reveal-external (plist-get app :value))))))
+
+(defun org-upwell--place-at-point ()
+  "Return the directory this line names, or nil.
+
+The header says where the heading\='s work is done, and that line is not a
+row: it carries a place rather than a stored item.  Both opening keys mean
+the same thing about it that they mean about a row."
+  (or (get-text-property (point) 'org-upwell-place)
+      (get-text-property (line-beginning-position) 'org-upwell-place)))
 
 (define-obsolete-function-alias 'org-upwell-open-folder
   'org-upwell-open-directory "0.2"
@@ -790,7 +802,19 @@ the title it sits under."
            (here (and from (equal from (plist-get domain :title)))))
       (concat
        (propertize "work here  " 'face 'shadow)
-       (abbreviate-file-name (file-name-as-directory dir))
+       ;; A button, not a row: the row commands all want a stored item and
+       ;; this is a fact about the heading.  But it names a directory, and a
+       ;; listing that names a place nobody can open from it is a listing
+       ;; that has to be left in order to be used.  RET falls through to
+       ;; `push-button\=' when there is no item on the line, so this is the
+       ;; whole of what opening it needs.
+       (make-text-button
+        (abbreviate-file-name (file-name-as-directory dir)) nil
+        'follow-link t
+        'help-echo "open this directory"
+        'org-upwell-place dir
+        'action (lambda (b) (org-upwell--open-path-emacs
+                             (button-get b 'org-upwell-place))))
        (pcase (cdr where)
          ('marked (propertize
                    (if (or here (null from)) "  main"
@@ -1236,6 +1260,31 @@ the first time either was changed."
                            (or (org-upwell--item-where m) ""))
                    m)))
          (org-upwell-items))))
+
+(defun org-upwell-bench-work-directory ()
+  "Open the directory this heading\='s work is done in, in dired.
+
+From anywhere on the bench.  The header says where it is and RET on that
+line opens it, but it is the one place somebody goes to over and over, and
+a key that first needs the cursor put on the right line is a key that needs
+the line found."
+  (interactive)
+  (let ((where (or (org-upwell-working-directory org-upwell-bench-domain)
+                   (user-error
+                    "org-upwell: nothing says where this heading's work is done"))))
+    (org-upwell--open-path-emacs (car where))))
+
+(defun org-upwell-bench-other-heading ()
+  "Lay another heading out on this bench.
+
+The bench is one heading's listing, and until now the way to a different
+one was to leave it -- find the heading in an Org buffer, or press the
+global key with a prefix.  Reading a listing is exactly when the next
+heading comes to mind, so the way to it belongs here.
+
+`org-upwell-matrix-choose\=' is the same act on the grid and the same key."
+  (interactive)
+  (org-upwell-bench (org-upwell--read-heading-marker)))
 
 (defun org-upwell-bench-add ()
   "Bring something this heading does not hold onto it, and keep it.
@@ -1844,6 +1893,7 @@ is: the two things the row had to shorten."
     (org-upwell-open-directory         row  "go to its place")
     (org-upwell-bench-pin-directory    row  "keep its place")
     (org-upwell-work-here              row  "work here")
+    (org-upwell-bench-work-directory   page "go to the work")
     (org-upwell-bench-move-here        row  "move it here")
     (org-upwell-bench-toggle-mark      row  "mark, move down")
     (org-upwell-bench-unmark           row  "unmark, move up")
@@ -1862,6 +1912,7 @@ is: the two things the row had to shorten."
     (org-upwell-bench-add              page "bring one in")
     (org-upwell-copy-from              page "copy from")
     (org-upwell-tidy-names             page "tidy the names")
+    (org-upwell-bench-other-heading    page "another heading")
     (org-upwell-matrix                 page "the family")
     (org-upwell-visit-store            page "the store file")
     (org-upwell-bench-quit             page "hide the bench"))
@@ -1926,6 +1977,9 @@ WIDTH is the columns available, defaulting to this buffer's window."
   (define-key map (kbd "r") #'org-upwell-bench-redraw)
   (define-key map (kbd "R") #'org-upwell-bench-reassign)
   (define-key map (kbd "i") #'org-upwell-bench-add)
+  (define-key map (kbd "f") #'org-upwell-bench-other-heading)
+  ;; `W' says where the work is done and `w' goes there.
+  (define-key map (kbd "w") #'org-upwell-bench-work-directory)
   (define-key map (kbd "Y") #'org-upwell-bench-copy-to)
   (define-key map (kbd "+") #'org-upwell-bench-add-file)
   (define-key map (kbd "L") #'org-upwell-bench-add-url))

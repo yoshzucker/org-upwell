@@ -1822,6 +1822,65 @@ look like the others and answer to half their keys."
           ;; quoted: `?' is a quantifier, and "main?" as a regexp matches "main"
           (should-not (string-match-p (regexp-quote "main?") header)))))))
 
+(ert-deftest org-upwell-test-the-place-in-the-header-can-be-opened ()
+  "The header names the directory the heading's work is done in, and both
+opening keys were dead on that line: the listing named a place and then had
+to be left in order to go to it.  Not a row -- the row commands all want a
+stored item -- so RET falls through to the button and `^\=' reads the place."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "acme/" (file-name-directory
+                                            (org-upwell-file))))
+           (file (org-upwell-test--dir-tree work))
+           visited revealed)
+      (make-directory work t)
+      (org-upwell-bench (org-upwell-test--marker-at-id file "P"))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (re-search-forward "acme" nil t))
+        (goto-char (match-beginning 0))
+        ;; no item here: the header is not a row, and must not become one
+        (should-not (org-upwell--bench-item-at-point))
+        (cl-letf (((symbol-function 'org-upwell--open-path-emacs)
+                   (lambda (p) (setq visited p)))
+                  ((symbol-function 'org-upwell--reveal-external)
+                   (lambda (p) (setq revealed p))))
+          (org-upwell-bench-open-at-point)
+          (should (equal (directory-file-name work)
+                         (directory-file-name visited)))
+          (org-upwell-open-directory)
+          (should (equal (directory-file-name work) revealed)))))))
+
+(ert-deftest org-upwell-test-the-work-directory-is-one-key-away ()
+  "The place the work is done is the row somebody goes to over and over.
+Putting the cursor on the header line first is a step, and a step is what
+makes a key not worth pressing."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "acme/" (file-name-directory
+                                            (org-upwell-file))))
+           (file (org-upwell-test--dir-tree work))
+           visited)
+      (make-directory work t)
+      (org-upwell-bench (org-upwell-test--marker-at-id file "P"))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-max))          ; the foot: not the header line
+        (cl-letf (((symbol-function 'org-upwell--open-path-emacs)
+                   (lambda (p) (setq visited p))))
+          (org-upwell-bench-work-directory))
+        (should (equal (directory-file-name work)
+                       (directory-file-name visited))))
+      (should (eq (lookup-key org-upwell-bench-mode-map (kbd "w"))
+                  #'org-upwell-bench-work-directory)))))
+
+(ert-deftest org-upwell-test-a-bench-with-no-work-directory-says-so ()
+  "Nothing on the heading and nothing to guess from: say it, rather than
+open whatever `car\\=' of nil would have been."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--write-journal
+                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
+      (org-upwell-bench (org-upwell-test--marker-at-id file "T1"))
+      (with-current-buffer "*org-upwell*"
+        (should-error (org-upwell-bench-work-directory) :type 'user-error)))))
+
 (ert-deftest org-upwell-test-an-inherited-directory-says-where-it-came-from ()
   "`org-entry-get' with inheritance returns the value and not where it came
 from, and a directory nobody set on this heading is one they cannot account
@@ -2080,6 +2139,109 @@ fetch it back."
       (let ((claims (plist-get (org-upwell-find :url "https://x/a") :claims)))
         (should (eq 'confirmed (org-upwell-claim-status claims "B")))
         (should (eq 'confirmed (org-upwell-claim-status claims "A")))))))
+
+(ert-deftest org-upwell-test-the-grid-opens-the-row-it-is-read-on ()
+  "A grid says which headings hold a thing and where it is, and neither
+settles whether it is the right one.  Opening it is how that gets settled,
+and the keys are the bench's for the same two acts."
+  (org-upwell-test--with-dir
+    (let* ((file (org-upwell-test--family))
+           (doc (expand-file-name "report.xlsx" dir))
+           opened revealed)
+      (with-temp-file doc (insert "x"))
+      (org-upwell-test--claim-to (list :path doc :name "report.xlsx")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "A"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (re-search-forward "report.xlsx" nil t))
+        (beginning-of-line)
+        (cl-letf (((symbol-function 'org-upwell--open-path-external)
+                   (lambda (p) (setq opened p)))
+                  ((symbol-function 'org-upwell--reveal-external)
+                   (lambda (p) (setq revealed p))))
+          (org-upwell-matrix-open)
+          (should (equal doc opened))
+          (org-upwell-open-directory)
+          (should (equal doc revealed))))
+      ;; Three keys for three questions: the thing, its record, the heading.
+      ;; RET opens what the line names, as it does on the bench.
+      (should (eq (lookup-key org-upwell-matrix-mode-map (kbd "RET"))
+                  #'org-upwell-matrix-open))
+      (should (eq (lookup-key org-upwell-matrix-mode-map (kbd "TAB"))
+                  #'org-upwell-matrix-visit-store))
+      (should (eq (lookup-key org-upwell-matrix-mode-map (kbd "v"))
+                  #'org-upwell-matrix-goto))
+      (should (eq (lookup-key org-upwell-matrix-mode-map (kbd "^"))
+                  #'org-upwell-open-directory)))))
+
+(ert-deftest org-upwell-test-the-grid-goes-to-two-different-headings ()
+  "A row is a heading in the store and a column is a heading of your own,
+and they are in different files.  One key each, because \"go to the
+heading\" is two questions here and answering the wrong one lands the
+cursor in a file the reader was not asking about."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "thing")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "A"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (re-search-forward "thing" nil t))
+        (beginning-of-line)
+        (org-upwell-matrix-visit-store)
+        (should (equal (org-upwell-file) (buffer-file-name)))
+        (should (equal "thing" (org-get-heading t t t t))))
+      (with-current-buffer org-upwell-matrix-buffer
+        (org-upwell-matrix--goto-first-cell)
+        (org-upwell-matrix-goto)
+        (should (equal file (buffer-file-name)))
+        ;; the first column, which is the family root
+        (should (equal "Project" (org-get-heading t t t t)))))))
+
+(ert-deftest org-upwell-test-the-grid-says-there-is-no-row-here ()
+  "Off the rows -- on the list of headings above the grid -- there is no
+thing to open.  Say which it is: passed on, the nothing becomes \"no live
+appearance for nil\", which names neither the key nor the cursor."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "a")
+                                 '("A") 'confirmed)
+      (org-upwell-matrix (org-upwell-test--marker-at-id file "A"))
+      (with-current-buffer org-upwell-matrix-buffer
+        (goto-char (point-min))
+        (should (equal '(user-error "No item on this row")
+                       (should-error (org-upwell-matrix-open)
+                                     :type 'user-error)))
+        (should (equal '(user-error "No item on this row")
+                       (should-error (org-upwell-matrix-visit-store)
+                                     :type 'user-error)))
+        (should-error (org-upwell-open-directory) :type 'user-error)))))
+
+(ert-deftest org-upwell-test-a-bench-can-be-pointed-at-another-heading ()
+  "Reading one heading's listing is when the next heading comes to mind.
+The way to it was to leave the bench; now it is a key on it, and the same
+key the grid uses for the same act."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--family)))
+      (org-upwell-test--claim-to (list :url "https://x/a" :name "first")
+                                 '("A") 'confirmed)
+      (org-upwell-test--claim-to (list :url "https://x/b" :name "second")
+                                 '("B") 'confirmed)
+      (org-upwell--bench-draw
+       (org-upwell-domain (org-upwell-test--marker-at-id file "A")))
+      (with-current-buffer "*org-upwell*"
+        (should (string-match-p "first" (substring-no-properties
+                                         (buffer-string))))
+        (cl-letf (((symbol-function 'org-upwell--read-heading-marker)
+                   (lambda () (org-upwell-test--marker-at-id file "B"))))
+          (org-upwell-bench-other-heading))
+        (let ((text (substring-no-properties (buffer-string))))
+          (should (string-match-p "second" text))
+          (should-not (string-match-p "first" text))
+          (should (equal "B" (plist-get org-upwell-bench-domain :id)))))
+      (should (eq (lookup-key org-upwell-bench-mode-map (kbd "f"))
+                  #'org-upwell-bench-other-heading)))))
 
 (ert-deftest org-upwell-test-r-reads-the-store-and-R-reassigns ()
   "`r\=' is the key a bench left open while the clock runs needs: the watcher

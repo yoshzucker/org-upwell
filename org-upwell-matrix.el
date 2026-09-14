@@ -342,11 +342,13 @@ grid\", which is true and useless."
     (org-upwell-matrix-add              column "bring one in")
     (org-upwell-matrix-copy-column      column "copy this column")
     (org-upwell-matrix-goto             column "go to the heading")
+    (org-upwell-matrix-visit-store      row    "its store entry")
+    (org-upwell-matrix-open             row    "open it")
+    (org-upwell-open-directory          row    "go to its place")
     (org-upwell-matrix-rename           row    "rename it")
     (org-upwell-matrix-toggle-mark      row    "mark, move down")
     (org-upwell-matrix-unmark-all       page   "unmark them all")
     (org-upwell-matrix-forget           row    "forget it")
-    (org-upwell-matrix-visit-store      row    "the store file")
     (org-upwell-tidy-names              page   "tidy the names")
     (org-upwell-matrix-redraw           page   "read again")
     (org-upwell-matrix-quit             page   "close"))
@@ -360,6 +362,22 @@ of them: a cell is one heading\\='s claim on one thing, a column is the
 heading whatever row you are on, a row is the thing itself, and none of
 them is the whole page.  Pressing a cell command off the grid says so
 rather than guessing which column was meant.")
+
+(defun org-upwell-matrix-open ()
+  "Open the thing on this row, the way the bench opens it.
+
+A grid answers which headings hold a thing, and the row says what and
+where it is; neither says whether it is the right one.  Opening it is how
+that gets settled, and having to go to a bench to do it means leaving the
+question the grid was opened to answer.
+
+On RET, because the line names a thing and that is the key for opening
+what a line names.  The heading is the column, and \[org-upwell-matrix-goto]
+goes there."
+  (interactive)
+  (org-upwell-open (or (org-upwell-matrix--item-at-point)
+                       (user-error "No item on this row"))
+                   'external))
 
 (defun org-upwell-matrix--cell ()
   "Return (ITEM . COLUMN) for the cell at point, or signal."
@@ -390,7 +408,11 @@ rather than guessing which column was meant.")
     (message "org-upwell: %s kept on \"%s\"" (plist-get m :name) (nth 2 c))))
 
 (defun org-upwell-matrix-goto ()
-  "Go to the heading this column is."
+  "Go to the heading this column is, in the file it lives in.
+
+A column is a heading of your own -- a task in a project file -- and not
+the store\'s record of anything.  \[org-upwell-matrix-visit-store] is the
+other one."
   (interactive)
   (let ((c (or (org-upwell-matrix--grid-column)
                (user-error "Not on the grid; move right to a column"))))
@@ -533,10 +555,16 @@ at a time."
       (message "org-upwell: %d forgotten" n))))
 
 (defun org-upwell-matrix-visit-store ()
-  "Visit this thing's heading in the store."
+  "Visit this thing\='s own heading in the store.
+
+The row is drawn from that heading, and the heading is where its name, how
+it came to be seen and every claim on it are written down.  The grid shows
+what those add up to; this is the record itself, and the only place it can
+be edited by hand."
   (interactive)
-  (when-let ((m (org-upwell-matrix--item-at-point)))
-    (org-upwell-visit-store m)))
+  (org-upwell-visit-store
+   (or (org-upwell-matrix--item-at-point)
+       (user-error "No item on this row"))))
 
 (defun org-upwell-matrix-forward-column (&optional n)
   "Move N grid columns to the right, stopping at the last one."
@@ -714,15 +742,25 @@ The only practical way to read a column two characters wide."
   ;; wrong on whichever listing it is read from, and the act is the store\'s,
   ;; not this buffer\'s.
   (define-key map (kbd "N") #'org-upwell-tidy-names)
-  ;; TAB, because this is the act the agenda puts on TAB: go to the entry and
-  ;; leave the listing standing.  `org-upwell-matrix-goto' shows the heading in
-  ;; a window that is not this one, which is `org-agenda-goto' exactly.
-  (define-key map (kbd "TAB") #'org-upwell-matrix-goto)
-  (define-key map (kbd "RET") #'org-upwell-matrix-goto)
+  ;; Two keys for the line and one for the column, because the line and the
+  ;; column are different questions.  One key each and no second one: the
+  ;; foot of the buffer names a command by asking the keymap for its key, so
+  ;; a spare binding is a foot that prints a key nobody was told to press.  RET opens the thing the line names,
+  ;; which is what RET does on the bench.  TAB goes to the line's own entry
+  ;; in the store -- where its name, its provenance and its claims are
+  ;; written, and the only place they can be edited.  `v' goes to the
+  ;; heading the column is, which lives in somebody's own file: a different
+  ;; buffer, a different question, and a key that says so.
+  (define-key map (kbd "RET") #'org-upwell-matrix-open)
+  (define-key map (kbd "TAB") #'org-upwell-matrix-visit-store)
+  (define-key map (kbd "v") #'org-upwell-matrix-goto)
   (define-key map (kbd "y") #'org-upwell-matrix-copy-column)
   (define-key map (kbd "R") #'org-upwell-matrix-rename)
   (define-key map (kbd "D") #'org-upwell-matrix-forget)
-  (define-key map (kbd "o") #'org-upwell-matrix-visit-store))
+  ;; `^' keeps the command it has on the bench -- a row carries its item on
+  ;; the same text property in both listings, so the one function reads
+  ;; either.
+  (define-key map (kbd "^") #'org-upwell-open-directory))
 
 (define-derived-mode org-upwell-matrix-mode special-mode "Upwell-Matrix"
   "One family of headings, and everything they hold.
