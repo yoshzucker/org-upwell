@@ -1360,6 +1360,60 @@ future sighting, printed at the end where it can be read.  And with UNDO
       (org-upwell-tidy--say n rules)
       n)))
 
+(defun org-upwell-tidy--table (found)
+  "Return (KEY . RUN-ENTRY) for FOUND, keyed by the run itself.
+
+The run is the candidate, not a line describing it.  A line has words in
+it, and a completion that can return a word rather than the whole candidate
+-- which is what happens when one is offered -- hands back \"end\" and
+nothing to look up.  What the reader picks is the text that will be taken
+off their names, which is the honest thing to be choosing anyway.
+
+Where one run is shared at both ends, the second is keyed with a mark after
+it: two candidates cannot be one string, and the entry behind the key still
+carries the real run."
+  (let (table)
+    (dolist (f found (nreverse table))
+      (let ((key (car f)))
+        (while (assoc key table)
+          (setq key (concat key " \u00b7")))
+        (push (cons key f) table)))))
+
+(defun org-upwell-tidy--annotation (table)
+  "Return a function describing a key of TABLE beside it.
+
+Beside rather than inside: an annotation is shown and not returned, so the
+count and the end it sits at can be read without becoming part of what the
+reader picks."
+  (lambda (key)
+    (when-let ((f (cdr (assoc key table))))
+      (propertize (format "   %s, %d names"
+                          (if (eq (cadr f) 'head) "at the start" "at the end")
+                          (cddr f))
+                  'face 'shadow))))
+
+(defun org-upwell-tidy--collection (table)
+  "Return the completion table offering the keys of TABLE.
+
+Its own function rather than a lambda inside the prompt, so the thing the
+reader is offered can be asked what it offers."
+  (let ((annotate (org-upwell-tidy--annotation table)))
+    (lambda (string pred action)
+      (if (eq action 'metadata)
+          `(metadata (annotation-function . ,annotate)
+                     ;; The order is the answer: most names first.  Left to
+                     ;; the frontend it would be alphabetical, and the run
+                     ;; worth taking off would be somewhere in the middle.
+                     (display-sort-function . identity)
+                     (cycle-sort-function . identity))
+        (complete-with-action action (mapcar #'car table) string pred)))))
+
+(defun org-upwell-tidy--read (table)
+  "Read runs to strip from TABLE.  Return the chosen keys."
+  (completing-read-multiple
+   "Strip (comma-separated, TAB to see them): "
+   (org-upwell-tidy--collection table) nil t))
+
 (defun org-upwell-tidy--offer ()
   "Offer the shared runs and strip the chosen ones.  Return how many moved."
   (org-upwell-with-store
@@ -1369,33 +1423,12 @@ future sighting, printed at the end where it can be read.  And with UNDO
      (unless found
        (user-error "org-upwell: nothing is shared by %d names or more"
                    org-upwell-tidy-threshold))
-     (let* ((table (mapcar (lambda (f)
-                             ;; The run in quotes, so a space at either end
-                             ;; of it is visible -- and so that it is not at
-                             ;; the edge of the label, where anything that
-                             ;; trims what it is handed would eat it.
-                             (cons (format "%-5s %3d  %S"
-                                           (if (eq (cadr f) 'head) "start" "end")
-                                           (cddr f) (car f))
-                                   f))
-                           found))
-            (chosen (completing-read-multiple
-                     "Strip (comma-separated, TAB to see them): "
-                     (mapcar #'car table) nil t))
-            ;; Looked up rather than rebuilt.  Formatting the label a second
-            ;; time and matching on it meant that any difference between the
-            ;; two -- a change to the format, whitespace trimmed on the way
-            ;; back -- selected nothing and reported it as nothing to do.
+     (let* ((table (org-upwell-tidy--table found))
+            (chosen (org-upwell-tidy--read table))
             (picked (mapcar
-                     (lambda (label)
-                       (or (cdr (assoc label table))
-                           (cdr (assoc (string-trim label)
-                                       (mapcar (lambda (c)
-                                                 (cons (string-trim (car c))
-                                                       (cdr c)))
-                                               table)))
-                           (user-error "org-upwell: %S is not one of them"
-                                       label)))
+                     (lambda (key)
+                       (or (cdr (assoc key table))
+                           (user-error "org-upwell: %S is not one of them" key)))
                      chosen))
             (n 0)
             moved rules)

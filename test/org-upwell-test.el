@@ -2585,6 +2585,55 @@ one -- never by the same."
                            (org-upwell--tidy-affixes
                             '("AcmeProjectA" "AcmeProjectB")))))))
 
+(ert-deftest org-upwell-test-the-candidate-is-the-run-itself ()
+  "A line describing the run has words in it, and a completion that can
+return a word rather than the whole candidate hands back \"end\" and nothing
+to look up.  What is offered is the text that will be taken off the names."
+  (let* ((org-upwell-tidy-threshold 3)
+         (found (org-upwell--tidy-affixes
+                 '("規定集 - 社内ポータル" "出張申請 - 社内ポータル"
+                   "経費 - 社内ポータル" "見積比較")))
+         (table (org-upwell-tidy--table found))
+         (keys (mapcar #'car table)))
+    (should (member " - 社内ポータル" keys))
+    ;; nothing about the label is in what is returned
+    (dolist (k keys)
+      (should-not (string-match-p "start\\|end\\|[0-9]" k)))
+    ;; and the key finds its entry
+    (should (equal " - 社内ポータル"
+                   (car (cdr (assoc " - 社内ポータル" table)))))))
+
+(ert-deftest org-upwell-test-the-count-is-shown-and-not-returned ()
+  "An annotation is shown and not returned, so the count and the end it
+sits at can be read without becoming part of what the reader picks."
+  (let* ((org-upwell-tidy-threshold 3)
+         (found (org-upwell--tidy-affixes
+                 '("社内ポータル - 規定集" "社内ポータル - 出張申請"
+                   "社内ポータル - 経費")))
+         (table (org-upwell-tidy--table found))
+         (annotate (org-upwell-tidy--annotation table))
+         (key (car (car table))))
+    (let ((note (substring-no-properties (funcall annotate key))))
+      (should (string-match-p "at the start" note))
+      (should (string-match-p "3 names" note)))
+    ;; the collection offers the bare keys, and keeps the order given
+    (let ((coll (org-upwell-tidy--collection table)))
+      (should (equal (mapcar #'car table) (all-completions "" coll)))
+      (should (eq 'identity
+                  (cdr (assq 'display-sort-function
+                             (cdr (funcall coll "" nil 'metadata)))))))))
+
+(ert-deftest org-upwell-test-one-run-at-both-ends-is-two-candidates ()
+  "Two candidates cannot be one string, and the entry behind the key still
+carries the real run."
+  (let* ((found '(("2026" head . 3) ("2026" tail . 3)))
+         (table (org-upwell-tidy--table found))
+         (keys (mapcar #'car table)))
+    (should (= 2 (length (seq-uniq keys))))
+    ;; both still point at the run they are about
+    (dolist (entry table)
+      (should (equal "2026" (car (cdr entry)))))))
+
 (ert-deftest org-upwell-test-a-choice-that-matches-nothing-says-so ()
   "Formatting the label a second time and matching on it meant that any
 difference between the two selected nothing and reported it as nothing to
@@ -2609,10 +2658,11 @@ few noisy ones."
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
       (cl-letf (((symbol-function 'completing-read-multiple)
                  (lambda (_prompt coll &rest _)
-                   ;; chosen from what was offered, not written out again:
-                   ;; a test that rebuilds the label tests the format
+                   ;; asked of the real collection, not of a list built
+                   ;; beside it: what is offered is what `all-completions'
+                   ;; says is offered
                    (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
-                                       coll)
+                                       (all-completions "" coll))
                              (error "no 社内ポータル run was offered"))))))
         (org-upwell-tidy-names))
       (let ((names (sort (mapcar (lambda (m) (plist-get m :name))
@@ -2636,10 +2686,11 @@ result\".  The moment it matters is the look at the bench straight after."
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
       (cl-letf (((symbol-function 'completing-read-multiple)
                  (lambda (_prompt coll &rest _)
-                   ;; chosen from what was offered, not written out again:
-                   ;; a test that rebuilds the label tests the format
+                   ;; asked of the real collection, not of a list built
+                   ;; beside it: what is offered is what `all-completions'
+                   ;; says is offered
                    (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
-                                       coll)
+                                       (all-completions "" coll))
                              (error "no 社内ポータル run was offered"))))))
         (org-upwell-tidy-names))
       (should (member "規定集" (mapcar (lambda (m) (plist-get m :name))
@@ -2670,10 +2721,11 @@ has to be said once, at the end."
         (org-upwell-save (list :name name :url (concat "https://x/" name))))
       (cl-letf (((symbol-function 'completing-read-multiple)
                  (lambda (_prompt coll &rest _)
-                   ;; chosen from what was offered, not written out again:
-                   ;; a test that rebuilds the label tests the format
+                   ;; asked of the real collection, not of a list built
+                   ;; beside it: what is offered is what `all-completions'
+                   ;; says is offered
                    (list (or (seq-find (lambda (l) (string-match-p "社内ポータル" l))
-                                       coll)
+                                       (all-completions "" coll))
                              (error "no 社内ポータル run was offered")))))
                 ((symbol-function 'message)
                  (lambda (fmt &rest args)
