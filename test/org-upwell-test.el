@@ -1919,11 +1919,14 @@ makes a key not worth pressing."
         (goto-char (point-max))          ; the foot: not the header line
         (cl-letf (((symbol-function 'org-upwell--open-path-emacs)
                    (lambda (p) (setq visited p))))
-          (org-upwell-work-here))
+          (org-upwell-work-directory))
         (should (equal (directory-file-name work)
                        (directory-file-name visited))))
       (should (eq (lookup-key org-upwell-bench-mode-map (kbd "w"))
-                  #'org-upwell-work-here)))))
+                  #'org-upwell-work-directory))
+      ;; the old name still answers, for a configuration that binds it
+      (should (eq (indirect-function 'org-upwell-work-here)
+                  (indirect-function 'org-upwell-work-directory))))))
 
 (ert-deftest org-upwell-test-with-nothing-said-it-asks-where ()
   "\"Take me to the work\" cannot answer nothing where nobody has ever said
@@ -1953,7 +1956,7 @@ keystroke nobody read is the failure this avoids."
                    (lambda (prompt &rest _) (setq asked prompt) work))
                   ((symbol-function 'org-upwell--open-path-emacs)
                    (lambda (p) (setq visited p))))
-          (org-upwell-work-here)))
+          (org-upwell-work-directory)))
       (should (string-match-p "Task" (or asked "")))
       (should (equal (directory-file-name work)
                      (directory-file-name visited)))
@@ -2289,10 +2292,10 @@ appearance for nil\", which names neither the key nor the cursor."
       (org-upwell-matrix (org-upwell-test--marker-at-id file "A"))
       (with-current-buffer org-upwell-matrix-buffer
         (goto-char (point-min))
-        (should (equal '(user-error "No item on this row")
+        (should (equal '(user-error "Nothing on this row")
                        (should-error (org-upwell-matrix-open)
                                      :type 'user-error)))
-        (should (equal '(user-error "No item on this row")
+        (should (equal '(user-error "Nothing on this row")
                        (should-error (org-upwell-matrix-visit-store)
                                      :type 'user-error)))
         (should-error (org-upwell-open-directory) :type 'user-error)))))
@@ -2389,9 +2392,9 @@ the list after `r\=' and was not before."
   (should org-upwell-bench-commands)
   (pcase-dolist (`(,command ,scope ,what) org-upwell-bench-commands)
     (should (commandp command))
-    (should (memq scope '(row page)))
+    (should (memq scope '(thing held page)))
     (should (stringp what))
-    (should (<= (string-width what) 15))))
+    (should (<= (string-width what) 24))))
 
 (ert-deftest org-upwell-test-the-legend-reads-the-keymap ()
   "The keys are read from the keymap rather than written down, because a
@@ -2408,7 +2411,7 @@ configuration is expected to move them -- this package's own dotfiles put
                  (use-local-map org-upwell-bench-mode-map)
                  (substring-no-properties (org-upwell--bench-legend 80)))))
     (should (string-match-p "a +open every one" usual))
-    (should (string-match-p "R +move elsewhere" usual))))
+    (should (string-match-p "R +hand to another heading" usual))))
 
 (ert-deftest org-upwell-test-the-legend-fits-a-narrow-bench ()
   "The bench is half a window wide and truncates rather than wraps, so a
@@ -3288,7 +3291,7 @@ whole reason it lives on the heading rather than in the store."
         (cl-letf (((symbol-function 'read-directory-name)
                    (lambda (&rest _) (user-error "asked")))
                   ((symbol-function 'org-upwell--open-path-emacs) #'ignore))
-          (should-error (org-upwell-work-here) :type 'user-error))
+          (should-error (org-upwell-work-directory) :type 'user-error))
         ;; guessed, not written: nothing was settled by that keystroke
         (should (eq 'guessed (cdr (org-upwell-working-directory
                                    (org-upwell-domain mk)))))
@@ -3296,7 +3299,7 @@ whole reason it lives on the heading rather than in the store."
         (should (search-forward "acme" nil t))
         (beginning-of-line)
         (cl-letf (((symbol-function 'org-upwell--open-path-emacs) #'ignore))
-          (org-upwell-work-here)))
+          (org-upwell-work-directory)))
       (should (equal (cons sub 'marked)
                      (org-upwell-working-directory (org-upwell-domain mk)))))))
 

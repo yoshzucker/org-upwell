@@ -323,7 +323,7 @@ grid\", which is true and useless."
     (if (window-live-p win) (window-body-width win) (frame-width))))
 
 (defun org-upwell-matrix--item-at-point ()
-  "Return the item on this line, or nil."
+  "Return the record on this line -- an item plist -- or nil."
   (or (get-text-property (point) 'org-upwell)
       (get-text-property (line-beginning-position) 'org-upwell)))
 
@@ -342,9 +342,9 @@ grid\", which is true and useless."
     (org-upwell-matrix-add              column "bring one in")
     (org-upwell-matrix-copy-column      column "copy this column")
     (org-upwell-matrix-goto             column "go to the heading")
-    (org-upwell-matrix-visit-store      row    "its store entry")
+    (org-upwell-matrix-visit-store      row    "its record in the store")
     (org-upwell-matrix-open             row    "open it")
-    (org-upwell-open-directory          row    "go to its place")
+    (org-upwell-open-directory          row    "go to its directory")
     (org-upwell-matrix-rename           row    "rename it")
     (org-upwell-matrix-toggle-mark      row    "mark, move down")
     (org-upwell-matrix-unmark-all       page   "unmark them all")
@@ -376,13 +376,13 @@ what a line names.  The heading is the column, and \[org-upwell-matrix-goto]
 goes there."
   (interactive)
   (org-upwell-open (or (org-upwell-matrix--item-at-point)
-                       (user-error "No item on this row"))
+                       (user-error "Nothing on this row"))
                    'external))
 
 (defun org-upwell-matrix--cell ()
   "Return (ITEM . COLUMN) for the cell at point, or signal."
   (let ((m (or (org-upwell-matrix--item-at-point)
-               (user-error "No item on this line")))
+               (user-error "Nothing on this line")))
         (c (or (org-upwell-matrix--grid-column)
                (user-error "Not on the grid; move right to a column"))))
     (cons m c)))
@@ -501,7 +501,7 @@ not the place to guess more widely than that."
   "Mark or unmark the row point is on, and move to the next."
   (interactive)
   (let* ((m (or (org-upwell-matrix--item-at-point)
-                (user-error "No item on this line")))
+                (user-error "Nothing on this line")))
          (id (plist-get m :id))
          (line (line-number-at-pos))
          (column (current-column)))
@@ -525,7 +525,7 @@ not the place to guess more widely than that."
   "Rename this thing, in the store.  The file is not touched."
   (interactive)
   (let* ((m (or (org-upwell-matrix--item-at-point)
-                (user-error "No item on this line")))
+                (user-error "Nothing on this line")))
          (new (string-trim
                (read-string "Name: " (or (plist-get m :name) "")))))
     (when (string-empty-p new)
@@ -541,7 +541,7 @@ find the things that should not be in the store, and they are found several
 at a time."
   (interactive)
   (let* ((items (or (org-upwell-matrix--target-items)
-                    (user-error "No item on this line")))
+                    (user-error "Nothing on this line")))
          (n (length items)))
     (when (yes-or-no-p
            (if (= n 1)
@@ -555,16 +555,19 @@ at a time."
       (message "org-upwell: %d forgotten" n))))
 
 (defun org-upwell-matrix-visit-store ()
-  "Visit this thing\='s own heading in the store.
+  "Visit the store\='s record of this thing.
 
-The row is drawn from that heading, and the heading is where its name, how
-it came to be seen and every claim on it are written down.  The grid shows
-what those add up to; this is the record itself, and the only place it can
-be edited by hand."
+The row is drawn from that record: its name, how it came to be seen, and
+every claim on it.  The grid shows what those add up to; this is the
+record itself, and the only place it can be corrected by hand.
+
+Not a heading of yours.  Two outlines meet in this buffer -- your own,
+which the columns are, and the store, which the rows are drawn from --
+and \\[org-upwell-matrix-goto] is the key for the other one."
   (interactive)
   (org-upwell-visit-store
    (or (org-upwell-matrix--item-at-point)
-       (user-error "No item on this row"))))
+       (user-error "Nothing on this row"))))
 
 (defun org-upwell-matrix-forward-column (&optional n)
   "Move N grid columns to the right, stopping at the last one."
@@ -877,10 +880,12 @@ characters is not a word.
                  '((move "moving: the commands below want a cell"
                          "moving")
                    (family "which family is shown" "which family")
-                   (cell "on this cell -- a heading and a thing"
-                         "on this cell")
-                   (column "on this column -- the heading" "on this column")
-                   (row "on this line -- the thing itself" "on this line")
+                   (cell "on this cell -- one heading's claim on one thing"
+                         "on this cell -- a claim")
+                   (column "on this column -- a heading of your own"
+                           "on this column -- a heading")
+                   (row "on this line -- the thing, and the store's record"
+                        "on this line -- the thing")
                    (page "on the grid" "on the grid"))))
         (org-upwell-matrix--goto-first-cell)
         ;; Called here as well as from the hook: a grid that is drawn and then

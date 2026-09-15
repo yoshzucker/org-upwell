@@ -17,9 +17,18 @@
 ;; -- a project, a task, a meeting -- never the other way around.  The heading
 ;; does not list files; the list is a query.
 ;;
-;; upwell.org is storage.  Its headings are not the work.  They carry no TODO
-;; keyword and the file is kept out of `org-agenda-files', for the same reason
-;; org-convect keeps goals out of the daily agenda.
+;; The store is where those records live.  It is an Org file today because
+;; that made it readable by hand while the shape was still moving -- nothing
+;; here depends on it, and a record would be a record as a row in a database.
+;; What it holds is not work: no TODO keyword, and out of `org-agenda-files',
+;; for the same reason org-convect keeps goals out of the daily agenda.
+;;
+;; Three words, kept apart on purpose.  A *heading* is always one of the
+;; reader's own -- a project, a task, a meeting, in their own files, never
+;; something in the store.  A *thing* is a file, a directory or a URL.  A
+;; *record* is what the store keeps about one thing: its name, how it came to
+;; be seen, and which headings hold it.  In code a record is an item plist,
+;; and ITEM is what the argument is called.
 
 ;;; Code:
 
@@ -70,7 +79,7 @@ is `org-upwell-open-directory', on its own key."
   :group 'org-upwell)
 
 (defconst org-upwell-prop-flag "UPWELL"
-  "Property whose presence marks a heading as a stored item.")
+  "Property whose presence tells a record from anything else in the store.")
 
 (defconst org-upwell-prop-path "UPWELL_PATH")
 (defconst org-upwell-prop-url "UPWELL_URL")
@@ -341,8 +350,9 @@ the name where nothing is bound, which is how an unbound one is known."
 
 COMMANDS is a list of (COMMAND SCOPE WHAT).  HEADINGS is an alist of
 (SCOPE LONG SHORT) giving the line above each group, long or short by
-whether the long one fits.  TAIL is candidate closing lines, longest
-first; the longest that fits is used.
+whether the long one fits -- and cut to the width where neither does,
+because a promise to fit has to hold at every width.  TAIL is candidate
+closing lines, longest first; the longest that fits is used.
 
 WIDTH is the columns available.  Two pairs of key and text sit side by
 side when they fit, one column when they do not -- these buffers truncate
@@ -358,7 +368,12 @@ printed lie at the foot of every listing."
                                what))
                        commands))
          (keyw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 1 r))) rows)))
-         (whatw (apply #'max 1 (mapcar (lambda (r) (string-width (nth 2 r))) rows)))
+         ;; Never wider than one column of this window.  A label is a phrase
+         ;; rather than two words now, and a foot that promises to fit has to
+         ;; keep the promise on the narrowest bench somebody drags out.
+         (whatw (min (apply #'max 1 (mapcar (lambda (r) (string-width (nth 2 r)))
+                                            rows))
+                     (max 6 (- width 4 keyw 2))))
          (cell (+ 4 keyw 2 whatw))
          (pairs (if (>= width (+ (* 2 cell) 2)) 2 1))
          (out ""))
@@ -367,8 +382,11 @@ printed lie at the foot of every listing."
         (when group
           (setq out (concat out
                             (propertize
-                             (format "%s\n" (if (<= (string-width heading) width)
-                                                heading short))
+                             (format "%s\n"
+                                     (truncate-string-to-width
+                                      (if (<= (string-width heading) width)
+                                          heading short)
+                                      width 0 nil t))
                              'face 'shadow)))
           ;; Down the first column and then down the second, so the eye
           ;; reads a column rather than hopping across a row.
@@ -382,7 +400,8 @@ printed lie at the foot of every listing."
                           (concat line
                                   (format (format "    %%-%ds  " keyw) (nth 1 r))
                                   (propertize
-                                   (format (format "%%-%ds" whatw) (nth 2 r))
+                                   (truncate-string-to-width
+                                    (nth 2 r) whatw 0 ?\s t)
                                    'face 'shadow)))))
                 (setq out (concat out (string-trim-right line) "\n"))))))))
     (if (null tail)
@@ -554,7 +573,7 @@ item with no name is a blank line on the bench."
          (and (not (string-empty-p base)) base))))
 
 (defun org-upwell--heading-plist ()
-  "Read the store heading at point into a plist.  Point must be on it."
+  "Read the record at point into an item plist.  Point must be on it."
   (let* ((id (org-entry-get (point) "ID"))
          (title (org-get-heading t t t t))
          (path (org-entry-get (point) org-upwell-prop-path))
@@ -598,7 +617,7 @@ for a command, where the file may have been edited since the last one.")
 Reading is the expensive half.  `org-upwell-save' asks
 `org-upwell-find-any' whether an item is already stored, and that asks
 `org-upwell-find' up to five times, and each of those used to walk the whole
-file.  One trace therefore walked a hundred-heading store several times over,
+file.  One trace therefore walked a hundred-record store several times over,
 and a background pass over a day of traces walked it hundreds of times --
 seconds of work, and enough consing to send the garbage collector round
 several times in the middle of somebody's typing.
@@ -646,7 +665,7 @@ the reads come back from what it found."
         items)))
 
 (defun org-upwell--store-remember (item)
-  "Put ITEM into the held store, replacing the entry with the same id.
+  "Put ITEM into the held store, replacing the record with the same id.
 
 Dropping the whole thing instead would make the next read walk the file
 again, which is one walk per write -- the cost this exists to remove."
@@ -660,7 +679,7 @@ again, which is one walk per write -- the cost this exists to remove."
 (defun org-upwell--store-drop (id)
   "Drop the item with ID from the held store.
 
-The counterpart of `org-upwell--store-remember': a heading deleted from
+The counterpart of `org-upwell--store-remember': a record deleted from
 the file has to leave the reading of it too, or the rest of the form
 still sees it."
   (when org-upwell--store-held
@@ -861,7 +880,7 @@ keeps it against later provisional writes."
   (org-upwell-claim item heading-id 'rejected))
 
 (defun org-upwell-forget (item)
-  "Delete ITEM's heading from the store.  Return non-nil if one went.
+  "Delete ITEM's record from the store.  Return non-nil if one went.
 
 Rejecting says the file does not belong to a heading and keeps the file.
 This says the file is not worth keeping at all -- a download opened once,
@@ -885,8 +904,9 @@ a URL caught by mistake -- so nothing is left to propose it again."
 (defun org-upwell-claimed-to (heading-id)
   "Return items that claim HEADING-ID, confirmed first.
 
-Rejections are claims in the store but not on the heading: they are
-what stops the intersection asking twice, not a file to open."
+A rejection is a claim too -- it is written down, so the intersection
+stops proposing the same thing every minute -- but it is not something
+this heading holds, so it is not returned here."
   (let ((items (seq-filter
                 (lambda (m) (memq (org-upwell-claim-status
                                    (plist-get m :claims) heading-id)

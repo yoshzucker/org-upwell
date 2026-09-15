@@ -10,6 +10,24 @@ acts -- where a thing is and what kind of thing it is are what make it worth
 opening at all. Those files are not listed under the heading; they point up
 at its id. ~upwell.org~ is storage for those identities, not the work.
 
+Four words carry the weight here, and two of them are the ones worth
+keeping apart:
+
+- a *heading* is always one of yours -- a project, a task, a meeting, in
+  your own Org files. It is never something in the store.
+- a *thing* is a file, a directory or a URL.
+- a *record* is what the store keeps about one thing: its name, how it came
+  to be seen, and which headings hold it.
+- the *store* is where the records live. It is an Org file today because
+  that made it readable by hand while the shape was still moving; nothing
+  here depends on that, and a record is a record whether it ends up as an
+  entry in a file or a row in a database.
+
+Two more live in the code. A record is an /item/ plist, and ~ITEM~ is what
+such an argument is called; the word is not used for anything else. A
+/claim/ is one line of a record -- this thing belongs to that heading --
+carrying whether somebody said so or the clock proposed it.
+
 Capture happens *outside* Emacs. A resident watcher records the frontmost
 document and, when it can, the browser URL, without a hotkey and without
 Emacs being focused. Attribution is the intersection of those traces with
@@ -105,61 +123,65 @@ including ~expand=~ in the org-protocol URL.
 | ~org-upwell-open-named~ | Completing-read over the store |
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
 | ~org-upwell-tidy-names~ | Offer the runs of text many stored names share, and strip the chosen ones (~C-u~ puts the last lot back) |
-| ~org-upwell-copy-from~ | Copy another heading's items onto this one, provisionally |
+| ~org-upwell-copy-from~ | Copy every thing another heading holds onto this one, provisionally |
 | ~org-upwell-matrix~ | One family of headings as a grid: rows are things, columns are headings, a cell is a claim |
 | (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
 | ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
 
-On the bench, marks decide what a command acts on: the marked items when
+On the bench, marks decide what a command acts on: the marked rows when
 there are any, the line point is on when there are none.
 
 | Key | On the bench |
 |---|---|
 | ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones. A file goes to ~org-upwell-open-function~, which is a policy about which extensions belong to the OS and which to Emacs; a directory goes to dired, since that is what opening a directory means here |
 | ~e~ | Visit inside Emacs, in another window |
-| ~^~ | Go to the place this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
-| ~P~ | Keep that place, as an item of its own |
-| ~w~ | Say where this heading's work is done, and go there. On a directory row, that row; in dired, the directory shown, and it asks which heading; anywhere else, the directory the heading already names, or one it asks for. Writes ~:UPWELL_DIR:~, which is inherited, and then opens dired on it. The guess is never written |
-| ~RET~ / ~^~ /on the header line/ | The same two acts on the line that names it: open it, or go and stand in it. It is not a row -- the row commands all want a stored item -- but it names a place, and a listing that names a place you cannot open from it has to be left to be used |
+| ~^~ | Go to the directory this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
+| ~P~ | Keep that directory, with a record of its own |
+| ~w~ | Open the directory this heading's work is done in, and say which it is. On a directory row, that row; in dired, the directory shown, and it asks which heading; anywhere else, the directory the heading already names, or one it asks for. Writes ~:UPWELL_DIR:~, which is inherited, and then opens dired on it. The guess is never written |
+| ~RET~ / ~^~ /on the header line/ | The same two acts on the line that names it: open it, or go and stand in it. It is not a row -- the row commands all want a record -- but it names a directory, and a listing that names a place you cannot open from it has to be left to be used |
 | ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
-| ~y~ | Copy another heading's items onto this one, all of them, provisionally |
+| ~y~ | Copy every thing another heading holds onto this one, provisionally |
 | ~f~ | Lay another heading out on this bench. Reading one heading's listing is when the next one comes to mind, and the way to it was to leave. ~f~ on the grid is the same act |
 | ~T~ | The whole family, as a grid |
 | ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
 | ~c~ | Keep the claim on this heading |
 | ~d~ | Take it off this heading, and have that stay said |
-| ~D~ | Delete the item from the store. The file is not touched |
+| ~D~ | Delete the record from the store. The file is not touched |
 | ~R~ | Move it to another heading: no here, yes there |
 | ~Y~ | Keep it on another heading /as well/. The same document is often what two tasks are both about |
 | ~i~ | Bring one stored thing onto this heading, whichever heading it is on now. The other way round from ~R~: stand where the thing is wanted |
 | ~+~ / ~L~ | Add a file / a URL to this heading |
-| ~o~ | Visit ~upwell.org~ at this item |
+| ~o~ | Visit the store, at this thing's record |
 | ~r~ / ~g~ | Take in whatever has been sighted since last time, then draw the listing again. Wanted while the clock runs: a sighting is not a claim, and the timer that makes one is a minute wide |
 | ~q~ | Dismiss the strip |
 
 The foot of the bench names all of these, with the key each one is on /in
 that buffer/ -- read from the keymap rather than written down, so a
 configuration that moves them does not leave a printed lie at the foot of
-every bench. Two groups, because a row command pressed on the title line
-says only that there is no item there:
+every bench. Three groups, because two questions are worth answering before
+a key is pressed: does the cursor have to be somewhere, and is this about
+the file itself or about what this heading says of it? The one command that
+moves a file rather than a record is then found in a group of four rather
+than in a list of thirteen.
 
 #+begin_example
-on this line, or the marked ones
-    RET  open it            u    unmark, move up
-    e    open in Emacs      c    keep it here
-    ^    go to its place    d    drop from here
-    P    keep its place     R    move elsewhere
-    M    move it here       Y    keep there too
-    m    mark, move down    D    forget entirely
+on this line -- the file or directory itself
+    RET  open it                    ^    go to its directory
+    e    open in Emacs              M    move it to the work
+on this line, or the marked -- what the store records
+    P    keep its directory         d    drop from here
+    m    mark, move down            R    hand to another heading
+    u    unmark, move up            Y    keep on another too
+    c    keep it here               D    forget it everywhere
 on the bench
-    w    work here, go      i    bring one in
-    a    open every one     y    copy from
-    x    open the marked    N    tidy the names
-    t    invert marks       f    another heading
-    U    unmark them all    T    the family
-    r    read the store     o    the store file
-    +    add a file         q    hide the bench
+    w    the work directory         i    bring another in
+    a    open every one             y    copy from a heading
+    x    open the marked            N    tidy the names
+    t    invert marks               f    show another heading
+    U    unmark them all            T    the family, as a grid
+    r    read the store             o    the store itself
+    +    add a file                 q    hide the bench
     L    add a URL
 Drop a file or URL here to pin it to this heading.
 #+end_example
@@ -210,7 +232,7 @@ their counts.
 
 One at a time. Taking a run off the names changes the names, so what the
 rest of them share is a different question -- and a list chosen in one go
-stops being true after its first item. It asks again after each, with the
+stops being true after the first one. It asks again after each, with the
 runs the last one left, and ~RET~ on an empty answer stops. What is offered
 is the run itself, with the end it sits at and how many names carry it shown
 beside it rather than written into it: a run has spaces in it, and a
@@ -286,7 +308,7 @@ work here  …/Documents/project/acme/  main, from "Move to the new vendor"
 #+end_example
 
 In the header rather than among the rows. Every row of the listing is a
-stored item and every row command expects one, so a row for a directory
+record and every row command expects one, so a row for a directory
 nothing stored would look like the others and answer to half their keys --
 and it is not a material anyway. It is a fact about the heading, like the
 title it sits under. Where the directory *is* also a row, that row is
@@ -300,7 +322,7 @@ Unmarked, the bench guesses: the directory holding the most of this
 heading's files, shown as ~main?~. Free and often right, and it is a count
 -- a heading whose downloads have piled up guesses the download directory.
 
-~org-upwell-work-here~ settles it, from wherever you are standing, and then
+~org-upwell-work-directory~ settles it, from wherever you are standing, and
 takes you there. Whichever door it is asked from, the same property is
 written on the same heading and dired opens on it:
 
@@ -450,9 +472,9 @@ refused before, because changing your mind is the ordinary case -- and
 claims the chosen one as an answer, since somebody chose it.
 
 Three keys, because "go there" is three questions on a grid. ~RET~ opens the
-thing. ~TAB~ (~C-i~) goes to /its own heading in the store/, where its name,
-how it came to be seen and every claim on it are written -- the record the
-row is drawn from, and the only place it can be edited by hand. ~v~ goes to
+thing. ~TAB~ (~C-i~) goes to /the store's record of it/ -- its name, how it
+came to be seen, every claim on it -- which is what the row is drawn from,
+and the only place it can be corrected by hand. ~v~ goes to
 /the heading this column is/, which is a task in a file of your own. Each
 lands in a window that is not the grid, and the grid keeps standing.
 
@@ -511,7 +533,7 @@ library, or this package's own store, and none of those is work.
 
 The watcher does not know Org. If Emacs is closed, traces pile up and wait.
 Nothing is guessed when there is no clock: that file becomes an unclaimed
-item, a row to deal with later, not a wrong project.
+record, a row to deal with later, not a wrong project.
 
 An answer you gave -- kept or rejected -- is never overwritten by a later
 sample. A rejected file is not on the heading and is unclaimed again; it
@@ -537,7 +559,7 @@ heading, when it has one.
 
 - Not org-attach. A screenshot belongs to the note it illustrates; a
   spreadsheet belongs to the application that opens it.
-- Not a 1:1 heading-to-directory map. A directory is one appearance of an item,
+- Not a 1:1 heading-to-directory map. A directory is one appearance of a thing,
   not its identity, and one file can belong to two headings.
 - Not a document archive. A scanned pile on disk stays on disk until
   something claims it.

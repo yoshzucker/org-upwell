@@ -24,14 +24,14 @@
 ;; A user heading -- a project, a task, a meeting -- has a domain.
 ;; Expanding the domain brings back the Org entry and the files and URLs
 ;; that claim it.  Those files are not listed under the heading; they
-;; point up at its id.  upwell.org is storage for those identities, not
-;; the work.
+;; point up at its id.  The store keeps those identities, not the work.
 ;;
 ;; Capture happens outside Emacs.  A resident watcher (AutoHotkey on
 ;; Windows, osascript on macOS) records the frontmost Office document and
 ;; browser URL without being asked.  Attribution is the intersection of
 ;; those traces with CLOCK intervals, including clocks filled in after the
-;; fact from the agenda (org-foresight's C).  The watcher does not know Org;
+;; fact from the agenda (`org-foresight-clock-fill').  The watcher does not
+;; know Org;
 ;; Emacs does not have to be focused for a file to be remembered.
 ;;
 ;; Layout:

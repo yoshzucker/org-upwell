@@ -11,7 +11,7 @@
 
 ;; Claims are not written at capture time from "whatever is clocked now".
 ;; That would miss the common case here: a stretch of work whose clock is
-;; filled in afterwards, from the agenda, with org-foresight's C.
+;; filled in afterwards, from the agenda, with `org-foresight-clock-fill'.
 ;;
 ;; The watcher records traces with unix timestamps and no Org in them.
 ;; This file intersects those traces with CLOCK intervals -- a running
@@ -57,7 +57,7 @@ all three."
   :group 'org-upwell)
 
 (defcustom org-upwell-inherit-on-clock-in nil
-  "When non-nil, clocking in copies items from the last heading laid out.
+  "When non-nil, clocking in copies what the last heading laid out held.
 
 The copy is provisional, the same heading is a no-op, and a confirmed
 claim is not downgraded.
@@ -103,7 +103,7 @@ Only the running clock is closed at NOW (a second past it, so the second
 you are in is inside the spell).  A CLOCK line with no end that
 is *not* running is a clock somebody forgot to close, and reading it as
 work still going on hands every file of today to a heading last touched
-in June.  Filling such a line in is org-foresight's C; guessing at it
+in June.  Filling such a line in is `org-foresight-clock-fill'; guessing at it
 here is not.
 
 Independent of org-foresight, so a filled-in clock is visible here the
@@ -164,9 +164,9 @@ redrawn."
   "Provisionally claim traces in [FROM, TO) to the heading at MARKER.
 
 Return the list of item plists newly or still provisionally attributed.
-Already-confirmed claims for this heading are left alone, and items a
+Already-confirmed claims for this heading are left alone, and things a
 person rejected for it are not proposed again.  PROVENANCE is recorded
-on a newly created item (default `trace')."
+on a newly created record (default `trace')."
 
   (let* ((traces (org-upwell-unique-traces
                   (org-upwell-traces-in from to)))
@@ -194,7 +194,8 @@ on a newly created item (default `trace')."
 
 This is the whole of attribution.  Called from a timer, from clock-out,
 and from after a clock is filled in after the fact.  Traces that sit in
-no interval become unclaimed items, so a file opened off the clock is
+no interval are recorded with no claim at all, so a file opened off the
+clock is
 still findable and still a signal."
   (interactive)
   ;; The count is said after the store is written.  `org-upwell-with-store'
@@ -269,7 +270,7 @@ The claims are already written by the time this runs; what it decides is
 whether to show them, ask about them, or say nothing.  See
 `org-upwell-review-on-clock-out'.  Called from clock-out and from after
 `org-foresight--file-clocked'; silent when there is nothing new.  Returns
-the items either way."
+the same things either way."
   (org-upwell-with-store
    (let* ((heading-id (org-upwell-heading-id marker))
           (items (seq-filter
@@ -350,7 +351,7 @@ decision starts costing more than leaving the file unclaimed."
 ;;;; Hooks -- live clock and after-the-fact fill
 
 (defun org-upwell-inherit-to-heading (from-id to-id)
-  "Provisionally claim every item of FROM-ID onto TO-ID.
+  "Provisionally claim everything FROM-ID holds onto TO-ID.
 
 What TO-ID already holds is left alone, whatever it is: kept, refused, or
 already proposed.  So the count returned is the number that were not
@@ -364,7 +365,7 @@ re-claiming what is already claimed sends the store to disk for nothing."
         (setq n (1+ n))))))
 
 (defun org-upwell--inherit-from-last-bench (marker)
-  "Copy items from `org-upwell-last-bench-id' onto MARKER, if different."
+  "Copy what `org-upwell-last-bench-id' holds onto MARKER, if different."
   (when (and org-upwell-inherit-on-clock-in
              org-upwell-last-bench-id
              (markerp marker)

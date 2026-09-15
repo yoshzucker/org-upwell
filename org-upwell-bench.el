@@ -27,7 +27,7 @@
 ;; The grid requires this file, so this file only names it.  The legend below
 ;; lists it as a command the bench can reach, which is a symbol and not a call.
 (declare-function org-upwell-matrix "org-upwell-matrix" (&optional marker choose))
-;; Dired is one of the three ways into `org-upwell-work-here', and the only
+;; Dired is one of the ways into `org-upwell-work-directory', and the only
 ;; one whose buffer this file never creates -- so it is named, not required.
 (declare-function dired-get-filename "dired" (&optional localp no-error-if-not-filep))
 (require 'seq)
@@ -96,7 +96,7 @@ a fraction."
   "Return a still-usable appearance of ITEM, updating the store.
 
 Order: live path, file-id under the search roots, basename search,
-office protocol, URL.  A miss marks the path stale; the item itself
+office protocol, URL.  A miss marks the path stale; the record itself
 does not die."
   (let ((path (plist-get item :path))
         (file-id (plist-get item :file-id))
@@ -257,25 +257,25 @@ the directory around it."
 A listing answers \"which of these two same-named files is it?\" with the
 directory; this is how to go and stand in it.  Read off the row at point
 when ITEM is nil, which works on the bench and on the grid alike: a row
-carries its item on the same text property in both.  A URL lives in no directory
-and says so.  A path that moved is resolved first, so the directory opened
-is the one the file is in now."
+carries its record on the same text property in both.  A URL lives in no
+directory and says so.  A path that moved is resolved first, so the
+directory opened is the one the file is in now."
   (interactive)
   (let ((m (or item (org-upwell--bench-item-at-point))))
     (if-let ((place (and (not m) (org-upwell--place-at-point))))
         (org-upwell--reveal-external (directory-file-name place))
-      (unless m (user-error "No item on this line"))
+      (unless m (user-error "Nothing on this line"))
       (let ((app (org-upwell-resolve m)))
         (unless (eq (plist-get app :kind) 'path)
           (user-error "org-upwell: %s is not a file on this machine"
-                      (or (plist-get m :name) "this item")))
+                      (or (plist-get m :name) "this one")))
         (org-upwell--reveal-external (plist-get app :value))))))
 
 (defun org-upwell--place-at-point ()
   "Return the directory this line names, or nil.
 
 The header says where the heading\='s work is done, and that line is not a
-row: it carries a place rather than a stored item.  Both opening keys mean
+row: it carries a directory rather than a record.  Both opening keys mean
 the same thing about it that they mean about a row."
   (or (get-text-property (point) 'org-upwell-place)
       (get-text-property (line-beginning-position) 'org-upwell-place)))
@@ -498,7 +498,7 @@ cursor ends up on the bench: asking for a list is asking to read it."
     (org-upwell-bench m)))
 
 (defun org-upwell-open-named (name)
-  "Open an item by NAME, completing over the store."
+  "Open a thing by NAME, completing over the store."
   (interactive
    (list (completing-read
           "File: "
@@ -506,14 +506,14 @@ cursor ends up on the bench: asking for a list is asking to read it."
           nil t)))
   (let ((m (seq-find (lambda (it) (equal (plist-get it :name) name))
                      (org-upwell-items))))
-    (unless m (user-error "No item named %s" name))
+    (unless m (user-error "Nothing stored is named %s" name))
     (org-upwell-open m)))
 
 ;;;; Bench
 
 (defvar-local org-upwell-bench-domain nil)
 (defvar-local org-upwell-bench-marked nil
-  "List of item ids marked in the bench, for opening a subset.")
+  "Ids of the records marked in the bench, for acting on a subset.")
 
 (defvar org-upwell--follow-seen nil
   "Heading identity the bench was last drawn for, while following.")
@@ -802,7 +802,7 @@ because it is wanted only when there is a line to print it on."
 BUF is the bench being drawn, which says how much width the line has.
 
 In the header rather than among the rows.  Every row of this listing is a
-stored item and every row command expects one; a row for a directory that
+record and every row command expects one; a row for a directory that
 is not stored would look like the others and answer to half their keys.
 And it is not a material anyway -- it is a fact about the heading, like
 the title it sits under."
@@ -993,10 +993,13 @@ across the break."
     (put-text-property start (1- (point)) 'org-upwell m)))
 
 (defun org-upwell-visit-store (&optional item)
-  "Visit `upwell.org', at ITEM's heading when given.
+  "Visit the store, at ITEM's record when given.
 
-This is the file the claims are written in -- the same shape in demo
-and in real use.  Point's item button, if any, selects the entry."
+The store is where this package keeps what it knows: every thing it has
+seen, and which headings hold it.  It is an Org file today because that
+made it readable by hand while the shape was still moving, and the demo
+writes the same shape as real use; nothing above this line depends on
+either.  Point's row, if any, selects the record."
   (interactive)
   (let* ((m (or item (get-text-property (point) 'org-upwell)))
          (file (org-upwell-file)))
@@ -1013,12 +1016,12 @@ and in real use.  Point's item button, if any, selects the entry."
         (org-fold-show-entry)))))
 
 (defun org-upwell--bench-item-at-point ()
-  "Return the item plist on this line, or nil."
+  "Return the record on this line -- an item plist -- or nil."
   (or (get-text-property (point) 'org-upwell)
       (get-text-property (line-beginning-position) 'org-upwell)))
 
 (defun org-upwell-bench-open-at-point ()
-  "Open the item on this line with the OS default app.
+  "Open the thing on this line with the OS default app.
 The bench window is left as the bench."
   (interactive)
   (let ((m (org-upwell--bench-item-at-point)))
@@ -1026,10 +1029,10 @@ The bench window is left as the bench."
       (push-button))))
 
 (defun org-upwell-bench-open-in-emacs ()
-  "Visit the item on this line inside Emacs, not in the bench window."
+  "Visit the thing on this line inside Emacs, not in the bench window."
   (interactive)
   (let ((m (org-upwell--bench-item-at-point)))
-    (unless m (user-error "No item on this line"))
+    (unless m (user-error "Nothing on this line"))
     (org-upwell-open m 'emacs)))
 
 (defun org-upwell-bench-open-all ()
@@ -1097,13 +1100,13 @@ the next `m\=' with nothing to mark."
       (forward-line -1))))
 
 (defun org-upwell-bench-toggle-mark ()
-  "Mark or unmark the item on this line, then move to the next."
+  "Mark or unmark this row, then move to the next."
   (interactive)
   (let* ((m (org-upwell--bench-item-at-point))
          (id (and m (plist-get m :id)))
          (line (line-number-at-pos)))
     (unless id
-      (user-error "No item on this line"))
+      (user-error "Nothing on this line"))
     (setq org-upwell-bench-marked
           (if (member id org-upwell-bench-marked)
               (delete id org-upwell-bench-marked)
@@ -1159,7 +1162,7 @@ more widely than that."
     (or marked
         (when-let ((m (org-upwell--bench-item-at-point)))
           (list m))
-        (user-error "No item on this line"))))
+        (user-error "Nothing on this line"))))
 
 (defun org-upwell--bench-heading-id ()
   "Return the org-id of the heading this bench is showing."
@@ -1231,7 +1234,7 @@ downgraded by a later pass."
 
 Written down as a rejection rather than forgotten: the intersection runs
 again on a timer and would otherwise put the same file back on the same
-heading.  The item itself stays in the store, and so does the file."
+heading.  The record itself stays in the store, and so does the file."
   (interactive)
   (let ((id (org-upwell--bench-heading-id))
         (items (org-upwell--bench-target-items)))
@@ -1713,7 +1716,7 @@ property `org-upwell-create\' puts new files in -- one fact, not two."
     dir))
 
 ;;;###autoload
-(defun org-upwell--work-here-where ()
+(defun org-upwell--work-directory-where ()
   "Return (MARKER . DIR) for the heading and directory in front of you.
 
 DIR is nil where nothing at point is a directory, which is most of the
@@ -1748,15 +1751,17 @@ whatever it already says or whatever gets read."
             nil))))
 
 ;;;###autoload
-(defun org-upwell-work-here ()
-  "Say where a heading's work is done, and go there.
+(defun org-upwell-work-directory ()
+  "Open the directory a heading's work is done in, and say which it is.
 
-One act, whichever door it is asked from.  `:UPWELL_DIR:' is written on
-the heading and every reader of it -- the bench, `org-upwell-create',
-\[org-upwell-bench-move-here] -- answers the same way afterwards.  Then
-dired opens on it, because a place worth naming is a place worth standing
-in, and the two were separate keys for no reason anybody could give at the
-moment of pressing one.
+One act, whichever door it is asked from: the directory is settled and
+dired opens on it.  Settling it writes `:UPWELL_DIR:' on the heading, and
+every reader of that -- the bench header, `org-upwell-create', which puts
+new files there, \[org-upwell-bench-move-here], which moves old ones --
+answers the same way afterwards.
+
+Naming a place and standing in it were two keys for a while, and at the
+moment of pressing one nobody could say which they wanted.
 
   On the bench, over a directory row: that row, this bench's heading.
   Nothing is asked; the row and the heading are both already chosen.
@@ -1775,7 +1780,7 @@ for -- the directory holding the most of its files -- and a guess promoted
 to a fact by a keystroke nobody read is how a download directory becomes a
 project's home."
   (interactive)
-  (pcase-let* ((`(,marker . ,dir) (org-upwell--work-here-where))
+  (pcase-let* ((`(,marker . ,dir) (org-upwell--work-directory-where))
                (said (and marker
                           (org-with-point-at marker
                             (org-entry-get (point) "UPWELL_DIR" t)))))
@@ -1808,15 +1813,15 @@ the far end is a different document with the same name, and choosing
 which of them survives is not a thing a file listing gets to do.
 
 Where it goes is `org-upwell-working-directory\='.  When that was guessed
-rather than marked, the question says so -- \[org-upwell-work-here]
+rather than marked, the question says so -- \[org-upwell-work-directory]
 settles it."
   (interactive)
   (let* ((m (or (org-upwell--bench-item-at-point)
-                (user-error "No item on this line")))
+                (user-error "Nothing on this line")))
          (where (or (org-upwell-working-directory org-upwell-bench-domain)
                     (user-error "org-upwell: nowhere to move to; %s"
                                 (substitute-command-keys
-                                 "\\[org-upwell-work-here] on a directory says where"))))
+                                 "\\[org-upwell-work-directory] on a directory says where"))))
          (dir (file-name-as-directory (car where)))
          (app (org-upwell-resolve m))
          (from (and (eq (plist-get app :kind) 'path) (plist-get app :value))))
@@ -1842,6 +1847,12 @@ settles it."
         (org-upwell--bench-redraw)
         (message "org-upwell: moved to %s" (abbreviate-file-name dir))))))
 
+(define-obsolete-function-alias 'org-upwell-work-here
+  'org-upwell-work-directory "0.4"
+  "Renamed: the old name said neither what it sets nor that it is a
+directory, and \"work here\" reads as a statement about the buffer rather
+than about a place on disk.")
+
 (defun org-upwell-bench-pin-directory ()
   "Keep the place this row lives in, as an item of its own.
 
@@ -1855,7 +1866,7 @@ while the clock ran.  This is for the one you have not been in yet, or
 the one whose sighting you dropped."
   (interactive)
   (let* ((m (or (org-upwell--bench-item-at-point)
-                (user-error "No item on this line")))
+                (user-error "Nothing on this line")))
          (app (org-upwell-resolve m))
          (path (and (eq (plist-get app :kind) 'path) (plist-get app :value))))
     (unless path
@@ -1915,19 +1926,19 @@ is: the two things the row had to shorten."
 ;; `g' would then be a printed lie at the foot of every bench.
 
 (defconst org-upwell-bench-commands
-  '((org-upwell-bench-open-at-point    row  "open it")
-    (org-upwell-bench-open-in-emacs    row  "open in Emacs")
-    (org-upwell-open-directory         row  "go to its place")
-    (org-upwell-bench-pin-directory    row  "keep its place")
-    (org-upwell-work-here              page "work here, go")
-    (org-upwell-bench-move-here        row  "move it here")
-    (org-upwell-bench-toggle-mark      row  "mark, move down")
-    (org-upwell-bench-unmark           row  "unmark, move up")
-    (org-upwell-bench-keep             row  "keep it here")
-    (org-upwell-bench-drop             row  "drop from here")
-    (org-upwell-bench-reassign         row  "move elsewhere")
-    (org-upwell-bench-copy-to          row  "keep there too")
-    (org-upwell-bench-forget           row  "forget entirely")
+  '((org-upwell-bench-open-at-point    thing "open it")
+    (org-upwell-bench-open-in-emacs    thing "open in Emacs")
+    (org-upwell-open-directory         thing "go to its directory")
+    (org-upwell-bench-move-here        thing "move it to the work")
+    (org-upwell-work-directory         page  "the work directory")
+    (org-upwell-bench-pin-directory    held  "keep its directory")
+    (org-upwell-bench-toggle-mark      held  "mark, move down")
+    (org-upwell-bench-unmark           held  "unmark, move up")
+    (org-upwell-bench-keep             held  "keep it here")
+    (org-upwell-bench-drop             held  "drop from here")
+    (org-upwell-bench-reassign         held  "hand to another heading")
+    (org-upwell-bench-copy-to          held  "keep on another too")
+    (org-upwell-bench-forget           held  "forget it everywhere")
     (org-upwell-bench-open-all         page "open every one")
     (org-upwell-bench-open-marked      page "open the marked")
     (org-upwell-bench-mark-toggle-all  page "invert marks")
@@ -1935,24 +1946,36 @@ is: the two things the row had to shorten."
     (org-upwell-bench-redraw           page "read the store")
     (org-upwell-bench-add-file         page "add a file")
     (org-upwell-bench-add-url          page "add a URL")
-    (org-upwell-bench-add              page "bring one in")
-    (org-upwell-copy-from              page "copy from")
+    (org-upwell-bench-add              page "bring another in")
+    (org-upwell-copy-from              page "copy from a heading")
     (org-upwell-tidy-names             page "tidy the names")
-    (org-upwell-bench-other-heading    page "another heading")
-    (org-upwell-matrix                 page "the family")
-    (org-upwell-visit-store            page "the store file")
+    (org-upwell-bench-other-heading    page "show another heading")
+    (org-upwell-matrix                 page "the family, as a grid")
+    (org-upwell-visit-store            page "the store itself")
     (org-upwell-bench-quit             page "hide the bench"))
   "What the foot of the bench names: (COMMAND SCOPE WHAT).
 
-SCOPE is `row\=' for the commands that act on the line under the cursor --
-or on the marked lines, where a command takes marks -- and `page\=' for the
-ones that do not care where point is.  Worth separating, because the
-failure is otherwise a puzzle: a row command pressed on the title line
-says only that there is no item there.
+SCOPE says where the key works and what it works on.  `thing\=' is the
+file or directory itself, on the line under the cursor and no other:
+opening it, going to where it lives, moving it.  `held\=' is the store\='s
+record of it -- its name, and which user headings it belongs to -- on the
+marked lines, or on this one where none are marked.  `page\=' does not
+care where point is.
 
-WHAT is held to 15 columns.  The bench is half a window wide; two of
-these pairs have to sit side by side in it, and the layout falls back to
-one column when even that will not fit.")
+The two are worth telling apart because only one of them can be undone by
+typing: a record is a sentence this package wrote and can rewrite, and a
+file is somebody\='s document.
+
+Worth separating twice over.  A line command pressed on the title line
+says only that there is no item there, which is a puzzle unless the foot
+said the line mattered; and the one command here that touches a file
+rather than the record of it is worth finding in a group of four rather
+than in a list of thirteen.
+
+WHAT is held to 24 columns.  The bench is half a window wide; two of
+these pairs sit side by side in it where they fit, and the layout falls
+back to one column when they do not.  Long enough for a phrase: a label
+cut to two words is a label that has to be guessed at.")
 
 (define-obsolete-function-alias 'org-upwell--bench-command-key
   'org-upwell--command-key "0.3")
@@ -1966,8 +1989,11 @@ WIDTH is the columns available, defaulting to this buffer's window."
    (or width
        (let ((win (get-buffer-window (current-buffer) nil)))
          (if (window-live-p win) (window-body-width win) (frame-width))))
-   '((row "on this line, or the marked ones" "this line, or the marked")
-     (page "on the bench" "on the bench"))
+   '((thing "on this line -- the file or directory itself"
+            "this line -- the file")
+     (held  "on this line, or the marked -- what the store records"
+            "this line -- the record")
+     (page  "on the bench" "on the bench"))
    '("Drop a file or URL here to pin it to this heading."
      "Drop a file or URL here to pin it."
      "Drop here to pin.")))
@@ -1991,7 +2017,7 @@ WIDTH is the columns available, defaulting to this buffer's window."
   ;; two doors that matter -- standing on a directory, or standing anywhere
   ;; with the place already said.  The capitals here are for what cannot be
   ;; undone by pressing the key again.
-  (define-key map (kbd "w") #'org-upwell-work-here)
+  (define-key map (kbd "w") #'org-upwell-work-directory)
   (define-key map (kbd "M") #'org-upwell-bench-move-here)
   (define-key map (kbd "T") #'org-upwell-matrix)
   (define-key map (kbd "RET") #'org-upwell-bench-open-at-point)
