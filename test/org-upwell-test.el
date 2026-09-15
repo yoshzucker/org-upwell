@@ -1061,7 +1061,9 @@ to a heading nobody has touched since."
 ;;;; Opening
 
 (ert-deftest org-upwell-test-bench-does-not-take-the-agenda-window ()
-  "V in the agenda expands the row.  It does not close the agenda."
+  "V in the agenda lays the row out.  The cursor goes to the listing --
+asking for it is asking to read it -- and the agenda keeps its window: it
+is a way of reading the heading, not somewhere to put the heading\='s file."
   (org-upwell-test--with-dir
    (let* ((org-upwell-bench-open-max 0)
           (org-upwell-bench-open-location nil)
@@ -1072,8 +1074,12 @@ to a heading nobody has touched since."
      (with-current-buffer agenda (org-agenda-mode))
      (delete-other-windows)
      (set-window-buffer (selected-window) agenda)
-     (org-upwell-bench mk)
-     (should (eq (window-buffer (selected-window)) agenda))
+     (let ((was (selected-window)))
+       (org-upwell-bench mk)
+       (should (eq (window-buffer (selected-window))
+                   (get-buffer "*org-upwell*")))
+       (should (window-live-p was))
+       (should (eq (window-buffer was) agenda)))
      (kill-buffer agenda))))
 
 (ert-deftest org-upwell-test-open-uses-org-upwell-open-function ()
@@ -1822,6 +1828,54 @@ look like the others and answer to half their keys."
           ;; quoted: `?' is a quantifier, and "main?" as a regexp matches "main"
           (should-not (string-match-p (regexp-quote "main?") header)))))))
 
+(ert-deftest org-upwell-test-the-header-line-is-a-button-end-to-end ()
+  "`j\=' and `k\=' hold point at the beginning of the line, and a button that
+started three words in was a button RET never landed on."
+  (org-upwell-test--with-dir
+    (let* ((work (expand-file-name "acme/" (file-name-directory
+                                            (org-upwell-file))))
+           (file (org-upwell-test--dir-tree work))
+           visited)
+      (make-directory work t)
+      (org-upwell-bench (org-upwell-test--marker-at-id file "P"))
+      (with-current-buffer "*org-upwell*"
+        (goto-char (point-min))
+        (should (re-search-forward "work here" nil t))
+        (beginning-of-line)                ; where j and k leave the cursor
+        (should (button-at (point)))
+        (should (org-upwell--place-at-point))
+        (cl-letf (((symbol-function 'org-upwell--open-path-emacs)
+                   (lambda (p) (setq visited p))))
+          (org-upwell-bench-open-at-point))
+        (should (equal (directory-file-name work)
+                       (directory-file-name visited)))))))
+
+(ert-deftest org-upwell-test-the-header-keeps-the-end-of-the-path ()
+  "The line truncates at the window edge, and what tells two directories
+apart is their last name -- the same reason a row cuts its directory from
+the beginning."
+  (org-upwell-test--with-dir
+    (let* ((deep (expand-file-name
+                  (concat "a-very-long-directory-name-indeed/"
+                          "another-long-one-to-push-it-along/"
+                          "and-a-third-for-good-measure/acme/")
+                  dir))
+           (file (org-upwell-test--dir-tree deep)))
+      (make-directory deep t)
+      (org-upwell--bench-draw (org-upwell-domain
+                               (org-upwell-test--marker-at-id file "P")))
+      (with-current-buffer "*org-upwell*"
+        (let ((line (car (seq-filter
+                          (lambda (l) (string-match-p "work here" l))
+                          (split-string (substring-no-properties
+                                         (buffer-string))
+                                        "\n")))))
+          (should line)
+          (should (<= (string-width line) (org-upwell--bench-width)))
+          ;; the end survives, the beginning is what went
+          (should (string-match-p "acme" line))
+          (should (string-match-p "…" line)))))))
+
 (ert-deftest org-upwell-test-the-place-in-the-header-can-be-opened ()
   "The header names the directory the heading's work is done in, and both
 opening keys were dead on that line: the listing named a place and then had
@@ -1865,21 +1919,46 @@ makes a key not worth pressing."
         (goto-char (point-max))          ; the foot: not the header line
         (cl-letf (((symbol-function 'org-upwell--open-path-emacs)
                    (lambda (p) (setq visited p))))
-          (org-upwell-bench-work-directory))
+          (org-upwell-work-here))
         (should (equal (directory-file-name work)
                        (directory-file-name visited))))
       (should (eq (lookup-key org-upwell-bench-mode-map (kbd "w"))
-                  #'org-upwell-bench-work-directory)))))
+                  #'org-upwell-work-here)))))
 
-(ert-deftest org-upwell-test-a-bench-with-no-work-directory-says-so ()
-  "Nothing on the heading and nothing to guess from: say it, rather than
-open whatever `car\\=' of nil would have been."
+(ert-deftest org-upwell-test-with-nothing-said-it-asks-where ()
+  "\"Take me to the work\" cannot answer nothing where nobody has ever said
+where the work is.  It asks, writes the answer down, and goes -- and never
+writes the guess: a download directory promoted to a project's home by a
+keystroke nobody read is the failure this avoids."
   (org-upwell-test--with-dir
-    (let ((file (org-upwell-test--write-journal
-                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
-      (org-upwell-bench (org-upwell-test--marker-at-id file "T1"))
+    (let* ((work (expand-file-name "acme/" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (mk (org-upwell-test--marker-at-id file "T1"))
+           asked visited)
+      (make-directory work t)
+      ;; Something to guess from, and somewhere else than the answer: the
+      ;; guess must not be what gets written.
+      (let ((elsewhere (expand-file-name "downloads/" dir)))
+        (make-directory elsewhere t)
+        (write-region "x" nil (expand-file-name "quote.xlsx" elsewhere))
+        (org-upwell-claim
+         (org-upwell-save (list :path (expand-file-name "quote.xlsx" elsewhere)))
+         "T1" 'confirmed))
+      (org-upwell-bench mk)
+      (should (eq 'guessed (cdr (org-upwell-working-directory
+                                 (org-upwell-domain mk)))))
       (with-current-buffer "*org-upwell*"
-        (should-error (org-upwell-bench-work-directory) :type 'user-error)))))
+        (cl-letf (((symbol-function 'read-directory-name)
+                   (lambda (prompt &rest _) (setq asked prompt) work))
+                  ((symbol-function 'org-upwell--open-path-emacs)
+                   (lambda (p) (setq visited p))))
+          (org-upwell-work-here)))
+      (should (string-match-p "Task" (or asked "")))
+      (should (equal (directory-file-name work)
+                     (directory-file-name visited)))
+      (should (equal (cons (directory-file-name work) 'marked)
+                     (org-upwell-working-directory (org-upwell-domain mk)))))))
 
 (ert-deftest org-upwell-test-an-inherited-directory-says-where-it-came-from ()
   "`org-entry-get' with inheritance returns the value and not where it came
@@ -3205,11 +3284,19 @@ whole reason it lives on the heading rather than in the store."
         (goto-char (point-min))
         (should (search-forward "quote.csv" nil t))
         (beginning-of-line)
-        (should-error (org-upwell-bench-work-here) :type 'user-error)
+        ;; a file row says nothing about a directory, and nothing is written
+        (cl-letf (((symbol-function 'read-directory-name)
+                   (lambda (&rest _) (user-error "asked")))
+                  ((symbol-function 'org-upwell--open-path-emacs) #'ignore))
+          (should-error (org-upwell-work-here) :type 'user-error))
+        ;; guessed, not written: nothing was settled by that keystroke
+        (should (eq 'guessed (cdr (org-upwell-working-directory
+                                   (org-upwell-domain mk)))))
         (goto-char (point-min))
         (should (search-forward "acme" nil t))
         (beginning-of-line)
-        (org-upwell-bench-work-here))
+        (cl-letf (((symbol-function 'org-upwell--open-path-emacs) #'ignore))
+          (org-upwell-work-here)))
       (should (equal (cons sub 'marked)
                      (org-upwell-working-directory (org-upwell-domain mk)))))))
 

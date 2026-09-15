@@ -120,8 +120,7 @@ there are any, the line point is on when there are none.
 | ~e~ | Visit inside Emacs, in another window |
 | ~^~ | Go to the place this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
 | ~P~ | Keep that place, as an item of its own |
-| ~W~ | Say where this heading's work is done (writes ~:UPWELL_DIR:~, which is inherited); also from dired and from a heading |
-| ~w~ | Open that working directory in dired, from anywhere on the bench. It is the one place somebody goes to over and over, and a key that first needs the cursor put on the right line is a key that needs the line found |
+| ~w~ | Say where this heading's work is done, and go there. On a directory row, that row; in dired, the directory shown, and it asks which heading; anywhere else, the directory the heading already names, or one it asks for. Writes ~:UPWELL_DIR:~, which is inherited, and then opens dired on it. The guess is never written |
 | ~RET~ / ~^~ /on the header line/ | The same two acts on the line that names it: open it, or go and stand in it. It is not a row -- the row commands all want a stored item -- but it names a place, and a listing that names a place you cannot open from it has to be left to be used |
 | ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
 | ~y~ | Copy another heading's items onto this one, all of them, provisionally |
@@ -151,11 +150,10 @@ on this line, or the marked ones
     e    open in Emacs      c    keep it here
     ^    go to its place    d    drop from here
     P    keep its place     R    move elsewhere
-    W    work here          Y    keep there too
-    M    move it here       D    forget entirely
-    m    mark, move down
+    M    move it here       Y    keep there too
+    m    mark, move down    D    forget entirely
 on the bench
-    w    go to the work     i    bring one in
+    w    work here, go      i    bring one in
     a    open every one     y    copy from
     x    open the marked    N    tidy the names
     t    invert marks       f    another heading
@@ -284,7 +282,7 @@ The bench says so in its header, under the title:
 
 #+begin_example
 Compare the three quotes  upwell.org
-work here  ~/Documents/project/acme/  main, from "Move to the new vendor"
+work here  …/Documents/project/acme/  main, from "Move to the new vendor"
 #+end_example
 
 In the header rather than among the rows. Every row of the listing is a
@@ -302,19 +300,29 @@ Unmarked, the bench guesses: the directory holding the most of this
 heading's files, shown as ~main?~. Free and often right, and it is a count
 -- a heading whose downloads have piled up guesses the download directory.
 
-~org-upwell-work-here~ settles it, from wherever you are standing. Three
-ways in, one act -- whichever is used, the same property is written on the
-same heading:
+~org-upwell-work-here~ settles it, from wherever you are standing, and then
+takes you there. Whichever door it is asked from, the same property is
+written on the same heading and dired opens on it:
 
-| on the bench, over a directory row | that row, this bench's heading; nothing asked |
-| in dired                           | the directory shown, and the heading is read  |
-| on an Org heading                  | that heading, and the directory is read       |
+| on the bench, over a directory row | that row, this bench's heading; nothing asked  |
+| in dired                           | the directory shown, and the heading is read   |
+| anywhere else                      | that heading, and the directory it already says |
 
-Whichever half is in front of you is the half not worth asking about. The
-heading is read from Org's own refile targets rather than from the list ~C-c
-v~ offers: that list is what is in flight, and where the work is *done* is a
-fact about a project -- which carries no keyword and often holds nothing
-yet, so it is in none of it.
+Whichever half is in front of you is the half not worth asking about. Where
+the heading says nothing yet, the directory is read and written down: "take
+me to the work" cannot answer nothing when nobody has ever said where the
+work is. The guess is never what gets written -- a download directory
+promoted to a project's home by a keystroke nobody read is exactly the
+mistake the guess is there to avoid making permanent.
+
+Setting it and going to it were two keys for a while, and nobody could say
+at the moment of pressing one which they wanted: naming a place and standing
+in it are the same intention a second apart.
+
+The heading is read from Org's own refile targets rather than from the list
+the bench offers: that list is what is in flight, and where the work is
+*done* is a fact about a project -- which carries no keyword and often holds
+nothing yet, so it is in none of it.
 
 ~M~ moves this row's file there. It is the one thing this package does to a
 file rather than about it, so it asks first, it says when the destination
