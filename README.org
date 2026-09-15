@@ -125,6 +125,7 @@ including ~expand=~ in the org-protocol URL.
 | ~org-upwell-open-named~ | Completing-read over the store |
 | ~org-upwell-sync~ | Intersect traces with clocks (the timer does this quietly) |
 | ~org-upwell-tidy-names~ | Offer the runs of text many stored names share, and strip the chosen ones (~C-u~ puts the last lot back) |
+| ~org-upwell-purge~ | Erase the forgotten records whose noes have outlived what they were answering. The only command that takes a record out of the store |
 | ~org-upwell-copy-from~ | Copy every thing another heading holds onto this one, provisionally |
 | ~org-upwell-matrix~ | One family of headings as a grid: rows are things, columns are headings, a cell is a claim |
 | (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
@@ -534,10 +535,16 @@ because a person's yes outranks the same person's earlier no. Nothing else
 does: the watcher goes on seeing what it always saw, and that sighting is
 what was being answered.
 
-To be rid of the record itself, open the store with ~o~ and delete the
-entry. It will come back if the thing is sighted again, with a new id and no
-memory, which is the honest answer: that is a new sighting, not the one that
-was forgotten.
+The noes pile up, and after a while each one is holding back a sighting
+nobody has made for a month. ~M-x org-upwell-purge~ is the broom: it erases
+the forgotten records older than ~org-upwell-purge-after~ (30 days), asks
+first with the count, and touches nothing else -- a record still holding
+claims is work, and no amount of age makes it rubbish. If a thing turns up
+again after its no is gone, it gets a record of its own, which is the honest
+answer: that is a new sighting, not the one that was forgotten.
+
+This is the one command that takes a record out of the store rather than
+writing something on it. ~D~ deliberately does not.
 
 
 Clock-out shows the bench and asks nothing: one spell often touches

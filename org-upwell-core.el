@@ -924,6 +924,83 @@ earlier no, and nothing else does."
                                 (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
     t))
 
+(defcustom org-upwell-purge-after 30
+  "Days a forgotten record is kept before `org-upwell-purge\=' may erase it.
+
+Long enough that the sighting which minted it has stopped being read.  The
+intersection reads today\='s trace log, so a no from last month is holding
+back nothing that is still arriving -- and if the thing turns up again
+after the no is gone, that is a new sighting and deserves a new record."
+  :type 'integer
+  :group 'org-upwell)
+
+(defun org-upwell--erase (id)
+  "Erase the record with ID from the store.  Return non-nil if one went.
+
+The only thing here that takes a record out of the store rather than
+writing something on it.  Forgetting deliberately does not: the no it
+leaves behind is what stops the next pass of the intersection minting the
+same thing again.  This is for a no that has outlived the sighting it was
+answering, and `org-upwell-purge\=' is the one caller."
+  (let ((file (org-upwell-file)))
+    (when (and id (file-exists-p file))
+      (with-current-buffer (find-file-noselect file)
+        (org-with-wide-buffer
+         (goto-char (point-min))
+         (when (re-search-forward
+                (concat "^[ \t]*:ID:[ \t]+" (regexp-quote id) "[ \t]*$")
+                nil t)
+           (org-back-to-heading t)
+           (delete-region (point) (org-end-of-subtree t t))
+           (unless org-upwell--store-held
+             (let ((save-silently t)) (save-buffer)))
+           t))))))
+
+;;;###autoload
+(defun org-upwell-purge (&optional days)
+  "Erase the noes that have outlived what they were answering.
+
+Forgetting leaves a record behind, emptied, saying \"not this, ever\" --
+without it the trace log mints the same thing again on the intersection\='s
+next pass.  Those pile up, and after a while each one is holding back a
+sighting nobody has made for a month.  This is the broom.
+
+DAYS defaults to `org-upwell-purge-after\='.  Nothing else is touched: a
+record still holding claims is work, not bookkeeping, and no amount of age
+makes it rubbish."
+  (interactive)
+  (let* ((days (or days org-upwell-purge-after))
+         (cutoff (time-subtract (current-time) (days-to-time days)))
+         (old (seq-filter
+               (lambda (m)
+                 (when-let ((when (plist-get m :forgotten)))
+                   (ignore-errors
+                     (time-less-p (org-upwell--parse-time when) cutoff))))
+               (org-upwell-items))))
+    (cond
+     ((null old)
+      (message "org-upwell: no forgotten record is older than %d day%s"
+               days (if (= days 1) "" "s"))
+      0)
+     ((not (yes-or-no-p
+            (format "Erase %d forgotten record%s, forgotten over %d day%s ago? "
+                    (length old) (if (= 1 (length old)) "" "s")
+                    days (if (= days 1) "" "s"))))
+      0)
+     (t
+      (let ((n 0))
+        (org-upwell-with-store
+         (dolist (m old)
+           (when (org-upwell--erase (plist-get m :id))
+             (setq n (1+ n)))))
+        (message "org-upwell: erased %d forgotten record%s"
+                 n (if (= n 1) "" "s"))
+        n)))))
+
+(defun org-upwell--parse-time (stamp)
+  "Return STAMP, an ISO 8601 string this package wrote, as a time value."
+  (encode-time (parse-time-string stamp)))
+
 (defun org-upwell-forgotten-p (item)
   "Return non-nil when ITEM is a record somebody forgot."
   (and (plist-get item :forgotten) t))

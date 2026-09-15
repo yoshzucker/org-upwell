@@ -1663,6 +1663,66 @@ comes back on the next pass, so dropping has to be written down."
                  (org-upwell-claim-status
                   (plist-get (org-upwell-find :path p) :claims) "T1"))))))
 
+(ert-deftest org-upwell-test-purging-sweeps-the-noes-that-outlived-their-use ()
+  "A no is written down so the next pass of the intersection does not mint
+the same thing again.  It stops being worth keeping once nothing has
+sighted the thing for a month -- and then it is bookkeeping, which is what
+this sweeps.  Nothing else goes: a record with claims on it is work."
+  (org-upwell-test--with-dir
+    (let ((old (expand-file-name "old.xlsx" dir))
+          (recent (expand-file-name "recent.xlsx" dir))
+          (held (expand-file-name "held.xlsx" dir)))
+      (dolist (p (list old recent held)) (write-region "x" nil p))
+      (org-upwell-save (list :path old :name "old.xlsx"))
+      (org-upwell-save (list :path recent :name "recent.xlsx"))
+      (org-upwell-claim (org-upwell-save (list :path held :name "held.xlsx"))
+                        "T1" 'confirmed)
+      (org-upwell-forget (org-upwell-find :path old))
+      (org-upwell-forget (org-upwell-find :path recent))
+      ;; age the first no by two months
+      (org-upwell-save
+       (plist-put (copy-sequence (org-upwell-find :path old))
+                  :forgotten (format-time-string
+                              "%Y-%m-%dT%H:%M:%S%z"
+                              (time-subtract (current-time)
+                                             (days-to-time 60)))))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+        (should (= 1 (org-upwell-purge 30))))
+      (should-not (org-upwell-find :path old))
+      ;; the young no stays, and so does the record somebody holds
+      (should (org-upwell-forgotten-p (org-upwell-find :path recent)))
+      (should (org-upwell-find :path held))
+      ;; and a thing whose no was swept comes back on the next sighting,
+      ;; with a record of its own: that is a new sighting, not the old one
+      (org-upwell-save (list :seen-as "old" :path old :provenance "trace"))
+      (should (org-upwell-find :path old))
+      (should-not (org-upwell-forgotten-p (org-upwell-find :path old))))))
+
+(ert-deftest org-upwell-test-purging-asks-and-takes-no-for-an-answer ()
+  "It erases records, which nothing else here does.  A count in a question
+is the whole warning."
+  (org-upwell-test--with-dir
+    (let ((p (expand-file-name "old.xlsx" dir)))
+      (write-region "x" nil p)
+      (org-upwell-save (list :path p :name "old.xlsx"))
+      (org-upwell-forget (org-upwell-find :path p))
+      (org-upwell-save
+       (plist-put (copy-sequence (org-upwell-find :path p))
+                  :forgotten (format-time-string
+                              "%Y-%m-%dT%H:%M:%S%z"
+                              (time-subtract (current-time)
+                                             (days-to-time 60)))))
+      (let (asked)
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (q &rest _) (setq asked q) nil)))
+          (should (= 0 (org-upwell-purge 30))))
+        (should (string-match-p "1 forgotten record" (or asked "")))
+        (should (org-upwell-find :path p)))
+      ;; and with nothing old enough it says so rather than asking
+      (cl-letf (((symbol-function 'yes-or-no-p)
+                 (lambda (&rest _) (error "asked with nothing to erase"))))
+        (should (= 0 (org-upwell-purge 3650)))))))
+
 (ert-deftest org-upwell-test-forgetting-survives-the-next-pass ()
   "The trace log still holds the sighting that minted it, and the
 intersection runs every minute -- so a record deleted at three o'clock was
