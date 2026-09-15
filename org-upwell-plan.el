@@ -11,7 +11,8 @@
 
 ;; Contributes three groups to `org-foresight-signal-functions' when
 ;; org-foresight is loaded.  The board is already the place unsettled
-;; work is read; unclaimed and stale items belong there, not on a
+;; work is read; things nothing holds and paths gone stale belong there,
+;; not on a
 ;; second visor that would have to be opened.
 
 ;;; Code:
@@ -46,7 +47,7 @@
   "Return (LABEL . FINDINGS) groups for the foresight board."
   (org-upwell-with-store
    (let (unclaimed stale empty)
-    (dolist (m (org-upwell-items))
+    (dolist (m (org-upwell-live-items))
       (when (org-upwell-unclaimed-p m)
         (push (org-upwell--finding m "no heading claims this") unclaimed))
       (when (plist-get m :stale)

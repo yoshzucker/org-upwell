@@ -12,7 +12,7 @@
 ;; The dependency root.  Everything else requires this file and this file
 ;; requires nothing of ours.
 ;;
-;; An item is not a path.  Paths, URLs and Office protocols are
+;; A thing is not a path.  Paths, URLs and Office protocols are
 ;; appearances of one identity.  Claims point *up* at a user heading's org-id
 ;; -- a project, a task, a meeting -- never the other way around.  The heading
 ;; does not list files; the list is a query.
@@ -90,8 +90,16 @@ is `org-upwell-open-directory', on its own key."
 (defconst org-upwell-prop-captured "UPWELL_CAPTURED")
 (defconst org-upwell-prop-opened "UPWELL_OPENED")
 (defconst org-upwell-prop-stale "UPWELL_STALE")
+(defconst org-upwell-prop-forgotten "UPWELL_FORGOTTEN"
+  "Property saying a record was forgotten, and when.
+
+A forgotten record is kept rather than deleted, which is the only way
+forgetting can hold: the trace log still has the sighting that minted it,
+and the intersection runs every minute, so a record deleted at three
+o\='clock is minted again at four minutes past.  What is left behind is a
+no, written down for the same reason a rejection is.")
 (defconst org-upwell-prop-kind "UPWELL_KIND"
-  "Property saying whether the item is a file or a directory.
+  "Property saying whether the thing is a file or a directory.
 
 Always the string \"file\" or \"dir\".  A property value has to be a string
 -- `org-entry-put\=' refuses anything else -- and a field that goes in as a
@@ -101,8 +109,8 @@ makes every save think the heading changed.")
 (defvar org-upwell-last-bench-id nil
   "Org-id of the heading last expanded.
 
-Used when a new heading is clocked in: items already claimed to this
-id is provisionally claimed to the new heading, so a DONE job's files
+Used when a new heading is clocked in: whatever is already claimed to
+this id is provisionally claimed to the new one, so a DONE job's files
 follow the next action without being pinned again.")
 
 ;;;; Paths
@@ -535,7 +543,7 @@ a pin or the review writes those two directly."
   (seq-remove (lambda (c) (equal (plist-get c :id) heading-id)) claims))
 
 (defun org-upwell-claim-live-p (claim)
-  "Return non-nil when CLAIM attaches its item to a heading.
+  "Return non-nil when CLAIM attaches its thing to a heading.
 
 A rejection is recorded as a claim so a later intersection does not
 propose it again, but it does not put the file on the heading."
@@ -558,7 +566,7 @@ still a signal, it just has nowhere to rise to."
       (with-temp-file f
         (insert "#+title: upwell\n"
                 "#+startup: overview\n\n"
-                "# Stored items.  Not work.  Not in the agenda.\n")))
+                "# Records of what was seen.  Not work.  Not in the agenda.\n")))
     f))
 
 (defun org-upwell-basename (path)
@@ -593,14 +601,15 @@ item with no name is a blank line on the bench."
           :captured (org-entry-get (point) org-upwell-prop-captured)
           :opened (org-entry-get (point) org-upwell-prop-opened)
           ;; `t\=' rather than the stored "t": what goes in has to be what
-          ;; comes out, or `org-upwell--unchanged-p\=' calls every stale item
+          ;; comes out, or `org-upwell--unchanged-p\=' calls every stale record
           ;; changed and sends the store to disk on every resolve.
           :stale (and (org-entry-get (point) org-upwell-prop-stale) t)
           :kind (org-entry-get (point) org-upwell-prop-kind)
+          :forgotten (org-entry-get (point) org-upwell-prop-forgotten)
           :marker (point-marker))))
 
 (defvar org-upwell--store nil
-  "Items read once, while `org-upwell-with-store' holds the store open.
+  "Records read once, while `org-upwell-with-store' holds the store open.
 
 Nil outside that form, and every read walks the file again -- which is right
 for a command, where the file may have been edited since the last one.")
@@ -615,14 +624,14 @@ for a command, where the file may have been edited since the last one.")
   "Run BODY with the store read once and written once.
 
 Reading is the expensive half.  `org-upwell-save' asks
-`org-upwell-find-any' whether an item is already stored, and that asks
+`org-upwell-find-any' whether a thing is already stored, and that asks
 `org-upwell-find' up to five times, and each of those used to walk the whole
 file.  One trace therefore walked a hundred-record store several times over,
 and a background pass over a day of traces walked it hundreds of times --
 seconds of work, and enough consing to send the garbage collector round
 several times in the middle of somebody's typing.
 
-Writing is the other half.  Saving after every item wrote the file once per
+Writing is the other half.  Saving after every record wrote the file once per
 trace.  Here the writing waits until the end and happens once, if anything
 changed at all."
   (declare (indent 0) (debug t))
@@ -642,7 +651,7 @@ changed at all."
           (save-buffer))))))
 
 (defun org-upwell-items ()
-  "Return every stored item as a plist.
+  "Return every record the store holds, each as an item plist.
 
 The store is small -- live work, not an archive -- so this is a walk, not an
 index.  Inside `org-upwell-with-store' the walk happens once and the rest of
@@ -676,19 +685,8 @@ again, which is one walk per write -- the cost this exists to remove."
                                 org-upwell--store)
                     (list item))))))
 
-(defun org-upwell--store-drop (id)
-  "Drop the item with ID from the held store.
-
-The counterpart of `org-upwell--store-remember': a record deleted from
-the file has to leave the reading of it too, or the rest of the form
-still sees it."
-  (when org-upwell--store-held
-    (setq org-upwell--store
-          (seq-remove (lambda (m) (equal (plist-get m :id) id))
-                      org-upwell--store))))
-
 (defun org-upwell-find (key value)
-  "Return the first item whose KEY equals VALUE.
+  "Return the first record whose KEY equals VALUE.
 
 KEY is `:id', `:path', `:url', `:office' or `:file-id'."
   (seq-find (lambda (m)
@@ -697,7 +695,7 @@ KEY is `:id', `:path', `:url', `:office' or `:file-id'."
             (org-upwell-items)))
 
 (defun org-upwell-find-any (spec)
-  "Return an existing item matching SPEC, a plist of appearances.
+  "Return an existing record matching SPEC, a plist of appearances.
 
 Match order: id, file-id, path, url, office.  The first hit wins, so a
 renamed file that kept its file-id is found before a new path is created."
@@ -725,10 +723,11 @@ for nothing."
        (seq-every-p (lambda (key)
                       (equal (plist-get item key) (plist-get existing key)))
                     '(:id :name :path :url :office :file-id
-                      :provenance :captured :opened :stale :kind))))
+                      :provenance :captured :opened :stale :kind
+                      :forgotten))))
 
 (defun org-upwell--write-at-point (item)
-  "Write ITEM's properties onto the heading at point."
+  "Write ITEM's fields onto the record at point."
   (org-entry-put (point) org-upwell-prop-flag "t")
   (when (plist-get item :id)
     (org-entry-put (point) "ID" (plist-get item :id)))
@@ -739,7 +738,8 @@ for nothing."
                   (,org-upwell-prop-provenance :provenance)
                   (,org-upwell-prop-captured :captured)
                   (,org-upwell-prop-opened :opened)
-                  (,org-upwell-prop-kind :kind)))
+                  (,org-upwell-prop-kind :kind)
+                  (,org-upwell-prop-forgotten :forgotten)))
     (let ((val (plist-get item (cadr pair))))
       (if (and val (not (string-empty-p val)))
           (org-entry-put (point) (car pair) val)
@@ -778,8 +778,14 @@ them, so the last claim can actually be taken off."
                  (org-id-uuid)))
          (merged
           (list :id id
+                ;; `:name\=' is a decision and `:seen-as\=' a sighting, so a
+                ;; name already stored outranks whatever a window was
+                ;; called this minute.  Without that, tidying a name lasted
+                ;; until the next pass of the intersection put the
+                ;; browser\='s own words back.
                 :name (or (plist-get item :name)
                           (and existing (plist-get existing :name))
+                          (plist-get item :seen-as)
                           (org-upwell-basename (plist-get item :path))
                           (or (plist-get item :url) "file"))
                 :path (or (plist-get item :path)
@@ -793,8 +799,11 @@ them, so the last claim can actually be taken off."
                 :claims (if (plist-member item :claims)
                             (plist-get item :claims)
                           (and existing (plist-get existing :claims)))
-                :provenance (or (plist-get item :provenance)
-                                (and existing (plist-get existing :provenance)))
+                ;; The first answer, like `:captured\='.  A file somebody
+                ;; pinned does not become a trace because the watcher
+                ;; noticed it afterwards.
+                :provenance (or (and existing (plist-get existing :provenance))
+                                (plist-get item :provenance))
                 :captured (or (and existing (plist-get existing :captured))
                               (plist-get item :captured)
                               (format-time-string "%Y-%m-%dT%H:%M:%S%z"))
@@ -805,6 +814,9 @@ them, so the last claim can actually be taken off."
                          (and existing (plist-get existing :stale) t))
                 :kind (or (plist-get item :kind)
                           (and existing (plist-get existing :kind)))
+                :forgotten (if (plist-member item :forgotten)
+                               (plist-get item :forgotten)
+                             (and existing (plist-get existing :forgotten)))
                 :marker (and existing (plist-get existing :marker)))))
     (when (and (plist-get merged :url) (not (plist-get merged :office)))
       (let ((minted (org-upwell-mint-office (plist-get merged :url))))
@@ -858,14 +870,25 @@ the plist again drops the claim in between, silently -- everything here
 re-reads before claiming, which is why nothing has been bitten by it."
   (let* ((m (if (plist-get item :id) item (org-upwell-save item)))
          (claims (org-upwell-claims-put (plist-get m :claims)
-                                        heading-id status)))
-    (org-upwell-save (plist-put (copy-sequence m) :claims claims))))
+                                        heading-id status))
+         (merged (plist-put (copy-sequence m) :claims claims)))
+    ;; A person\='s yes undoes their earlier no.  The clock\='s guess does not:
+    ;; the thing that got forgotten is usually the thing the watcher keeps
+    ;; seeing, and a provisional claim is the watcher speaking.
+    (when (eq status 'confirmed)
+      (setq merged (plist-put merged :forgotten nil)))
+    (org-upwell-save merged)))
 
 (defun org-upwell-unclaim (item heading-id)
-  "Forget that HEADING-ID was ever considered for ITEM.
+  "Take HEADING-ID's claim off ITEM, leaving nothing said either way.
 
-The intersection is free to propose it again.  To say no and have it
-stay said, use `org-upwell-reject'."
+Not a no: the intersection is free to propose it again a minute later.
+To say no and have it stay said, use `org-upwell-reject'; to say it of
+the thing rather than of one heading, `org-upwell-forget'.
+
+`forget' is reserved for that one: it is the whole thing, everywhere,
+and a word that also meant \"this heading stopped considering it\" would
+make the stronger act unsayable."
   (let ((claims (org-upwell-claims-remove (plist-get item :claims)
                                           heading-id)))
     (org-upwell-save (plist-put (copy-sequence item) :claims claims))))
@@ -880,29 +903,41 @@ keeps it against later provisional writes."
   (org-upwell-claim item heading-id 'rejected))
 
 (defun org-upwell-forget (item)
-  "Delete ITEM's record from the store.  Return non-nil if one went.
+  "Forget ITEM: drop its claims and record that it is not to come back.
 
-Rejecting says the file does not belong to a heading and keeps the file.
-This says the file is not worth keeping at all -- a download opened once,
-a URL caught by mistake -- so nothing is left to propose it again."
-  (let ((id (plist-get item :id))
-        (file (org-upwell-file)))
-    (when (and id (file-exists-p file))
-      (with-current-buffer (find-file-noselect file)
-        (org-with-wide-buffer
-         (goto-char (point-min))
-         (when (re-search-forward
-                (concat "^[ \t]*:ID:[ \t]+" (regexp-quote id) "[ \t]*$")
-                nil t)
-           (org-back-to-heading t)
-           (delete-region (point) (org-end-of-subtree t t))
-           (unless org-upwell--store-held
-             (let ((save-silently t)) (save-buffer)))
-           (org-upwell--store-drop id)
-           t))))))
+Rejecting says the thing does not belong to one heading and keeps it.
+This says it was not worth recording at all -- a download opened once, a
+URL caught by mistake -- and nothing lists it again.
+
+The record is kept, emptied, with `org-upwell-prop-forgotten\=' on it.  It
+has to be: the trace log still holds the sighting that minted it and the
+intersection runs every minute, so a record deleted at three o\='clock was
+minted again four minutes later and the key looked broken.  A no is worth
+writing down for exactly the reason a rejection is.
+
+Claiming it confirmed brings it back -- a person\='s yes outranks their
+earlier no, and nothing else does."
+  (when-let* ((id (plist-get item :id))
+              (m (org-upwell-find :id id)))
+    (org-upwell-save (plist-put (plist-put (copy-sequence m) :claims nil)
+                                :forgotten
+                                (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
+    t))
+
+(defun org-upwell-forgotten-p (item)
+  "Return non-nil when ITEM is a record somebody forgot."
+  (and (plist-get item :forgotten) t))
+
+(defun org-upwell-live-items ()
+  "Every record the store holds except the forgotten ones.
+
+What a listing shows.  `org-upwell-items\=' is the whole walk and is for
+asking whether a thing is already known -- a forgotten record still
+answers that question, which is the whole of what keeps it forgotten."
+  (seq-remove #'org-upwell-forgotten-p (org-upwell-items)))
 
 (defun org-upwell-claimed-to (heading-id)
-  "Return items that claim HEADING-ID, confirmed first.
+  "Return the records that claim HEADING-ID, confirmed first.
 
 A rejection is a claim too -- it is written down, so the intersection
 stops proposing the same thing every minute -- but it is not something
@@ -911,7 +946,7 @@ this heading holds, so it is not returned here."
                 (lambda (m) (memq (org-upwell-claim-status
                                    (plist-get m :claims) heading-id)
                                   '(provisional confirmed)))
-                (org-upwell-items))))
+                (org-upwell-live-items))))
     (seq-sort
      (lambda (a b)
        (let ((sa (org-upwell-claim-status (plist-get a :claims) heading-id))

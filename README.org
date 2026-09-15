@@ -15,7 +15,9 @@ keeping apart:
 
 - a *heading* is always one of yours -- a project, a task, a meeting, in
   your own Org files. It is never something in the store.
-- a *thing* is a file, a directory or a URL.
+- a *thing* is a file, a directory or a URL -- the bytes on the disk or
+  the page on the web, not the store's note about it. Where a command
+  takes only files, this says /the file/ and means the one on disk.
 - a *record* is what the store keeps about one thing: its name, how it came
   to be seen, and which headings hold it.
 - the *store* is where the records live. It is an Org file today because
@@ -137,20 +139,20 @@ there are any, the line point is on when there are none.
 | ~RET~ / ~a~ / ~x~ | Open this one / all of them / the marked ones. A file goes to ~org-upwell-open-function~, which is a policy about which extensions belong to the OS and which to Emacs; a directory goes to dired, since that is what opening a directory means here |
 | ~e~ | Visit inside Emacs, in another window |
 | ~^~ | Go to the directory this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
-| ~P~ | Keep that directory, with a record of its own |
+| ~P~ | Record that directory as a thing of its own. Nothing on disk is touched; what appears is a row |
 | ~w~ | Open the directory this heading's work is done in, and say which it is. On a directory row, that row; in dired, the directory shown, and it asks which heading; anywhere else, the directory the heading already names, or one it asks for. Writes ~:UPWELL_DIR:~, which is inherited, and then opens dired on it. The guess is never written |
 | ~RET~ / ~^~ /on the header line/ | The same two acts on the line that names it: open it, or go and stand in it. It is not a row -- the row commands all want a record -- but it names a directory, and a listing that names a place you cannot open from it has to be left to be used |
-| ~M~ | Move this row's file into that directory. Asks first, and never writes over a name already taken |
+| ~M~ | Move the file itself into that directory -- the one command here that changes anything on disk. Asks first, and never writes over a name already taken |
 | ~y~ | Copy every thing another heading holds onto this one, provisionally |
 | ~f~ | Lay another heading out on this bench. Reading one heading's listing is when the next one comes to mind, and the way to it was to leave. ~f~ on the grid is the same act |
-| ~T~ | The whole family, as a grid |
-| ~m~ ~u~ ~t~ ~U~ | Mark, unmark, toggle all, unmark all |
-| ~c~ | Keep the claim on this heading |
-| ~d~ | Take it off this heading, and have that stay said |
-| ~D~ | Delete the record from the store. The file is not touched |
-| ~R~ | Move it to another heading: no here, yes there |
+| ~T~ | Show the whole family, as a grid |
+| ~m~ ~u~ ~t~ ~U~ | Mark, unmark, invert the marks, unmark them all. ~m~ and ~u~ step down a line, which is what makes a run of rows a run of presses |
+| ~c~ | Keep it on this heading: a claim somebody made, not one the clock proposed |
+| ~d~ | Drop it from /this/ heading, and have that stay said. It stays in the store and on every other heading that holds it |
+| ~D~ | Forget it /everywhere/: off this heading, off every other, off every listing, and never proposed again. The file on disk is not touched. See below for what is left behind, and why |
+| ~R~ | Hand it to another heading: no here, yes there. The claim moves; nothing on disk does |
 | ~Y~ | Keep it on another heading /as well/. The same document is often what two tasks are both about |
-| ~i~ | Bring one stored thing onto this heading, whichever heading it is on now. The other way round from ~R~: stand where the thing is wanted |
+| ~i~ | Bring another thing in: one the store already knows, whichever heading it is on now. The other way round from ~R~: stand where the thing is wanted |
 | ~+~ / ~L~ | Add a file / a URL to this heading |
 | ~o~ | Visit the store, at this thing's record |
 | ~r~ / ~g~ | Take in whatever has been sighted since last time, then draw the listing again. Wanted while the clock runs: a sighting is not a claim, and the timer that makes one is a minute wide |
@@ -167,21 +169,21 @@ than in a list of thirteen.
 
 #+begin_example
 on this line -- the file or directory itself
-    RET  open it                    ^    go to its directory
-    e    open in Emacs              M    move it to the work
+    RET  open it                     ^    go to its directory
+    e    open it in Emacs            M    move the file to work
 on this line, or the marked -- what the store records
-    P    keep its directory         d    drop from here
-    m    mark, move down            R    hand to another heading
-    u    unmark, move up            Y    keep on another too
-    c    keep it here               D    forget it everywhere
+    c    keep it here                P    record its directory
+    d    drop it from here           R    hand to another heading
+    m    mark                        Y    keep it on another too
+    u    unmark                      D    forget it everywhere
 on the bench
-    w    the work directory         i    bring another in
-    a    open every one             y    copy from a heading
-    x    open the marked            N    tidy the names
-    t    invert marks               f    show another heading
-    U    unmark them all            T    the family, as a grid
-    r    read the store             o    the store itself
-    +    add a file                 q    hide the bench
+    w    go to the work directory    i    bring another thing in
+    a    open every one              y    copy from a heading
+    x    open the marked             N    tidy the names
+    t    invert the marks            f    show another heading
+    U    unmark them all             T    show the family
+    r    read the store again        o    open the store
+    +    add a file                  q    hide the bench
     L    add a URL
 Drop a file or URL here to pin it to this heading.
 #+end_example
@@ -505,6 +507,38 @@ Two clocks, not one.
 | A *confirmed claim* | ~c~ on the bench, which clock-out opens for the heading it just closed. An explicit pin or drop is confirmed at once | you |
 | A *copy* | ~y~ on the bench, or a column onto another in the grid. Provisional, and what the far heading has already settled is left alone | you |
 | A *rejection* | ~d~ or ~r~ on the bench. Written down, because the intersection runs again a minute later and would otherwise propose the same file | you |
+| A *forgetting* | ~D~ on the bench or the grid. Written down for the same reason, about the thing rather than about one heading | you |
+
+** Dropping, and forgetting
+
+~d~ and ~D~ answer different questions, and the difference is how far the no
+reaches.
+
+~d~ says /not this heading/. The thing stays in the store, stays on every
+other heading that holds it, and the rejection is remembered so the
+intersection stops offering it here.
+
+~D~ says /not anywhere, ever/. The claims go, every listing stops showing
+it, and nothing proposes it again.
+
+What is left behind is the no itself. The record stays in the store,
+emptied, carrying ~:UPWELL_FORGOTTEN:~ -- and it has to, because deleting it
+outright does not hold: the watcher's log still has the sighting that minted
+it, the intersection reads that log every minute, and a record deleted at
+three o'clock is minted again at four minutes past. This was a real bug and
+the key looked broken. A rejection is written down for exactly this reason;
+forgetting is the same idea one size up.
+
+Pinning the thing again undoes it -- dropping it on a bench, ~+~, ~L~ --
+because a person's yes outranks the same person's earlier no. Nothing else
+does: the watcher goes on seeing what it always saw, and that sighting is
+what was being answered.
+
+To be rid of the record itself, open the store with ~o~ and delete the
+entry. It will come back if the thing is sighted again, with a new id and no
+memory, which is the honest answer: that is a new sighting, not the one that
+was forgotten.
+
 
 Clock-out shows the bench and asks nothing: one spell often touches
 several files, and a question that names none of them can only be

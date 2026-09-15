@@ -11,7 +11,7 @@
 
 ;; Pin, drop, and org-protocol are the explicit catch.  They never ask
 ;; where something belongs.  A running clock, or a heading at point, is
-;; a confirmed claim; otherwise the item is unclaimed.
+;; a confirmed claim; otherwise nothing holds it.
 ;;
 ;; Dropping onto an Org heading or an agenda row is a claim, not a move.
 ;; The file stays where the OS left it.
@@ -56,7 +56,7 @@ the pin is unclaimed -- catching and deciding stay different acts."
    (t nil)))
 
 (defun org-upwell--spec-from-path (path &optional provenance)
-  "Build an item spec from PATH, minting an office protocol when it is a URL."
+  "Build a spec from PATH, minting an office protocol when it is a URL."
   (let* ((path (and path (string-trim path)))
          (url (and path (org-upwell--looks-like-url path) path))
          (file (and path (not url) (expand-file-name path))))
@@ -70,11 +70,11 @@ the pin is unclaimed -- catching and deciding stay different acts."
           :provenance (or provenance "pin"))))
 
 (defun org-upwell-pin (path &optional marker provenance)
-  "Catch PATH (a file or a URL) and return the saved item.
+  "Catch PATH (a file or a URL) and return the record it was saved as.
 
 MARKER, when given, is the user heading to claim confirmed.  When nil,
 the heading at point / the running clock is used; when those are also
-nil, the item is unclaimed.  PATH has to be a file that is there, or a
+nil, nothing holds it.  PATH has to be a file that is there, or a
 URL; there is nothing to catch otherwise."
   (interactive
    (list (read-file-name "Pin: " nil nil t
@@ -83,7 +83,7 @@ URL; there is nothing to catch otherwise."
          (_ (unless (or (plist-get spec :path)
                         (plist-get spec :url)
                         (plist-get spec :office))
-              ;; An item is its appearances.  One with none can never be
+              ;; A thing is its appearances.  One with none can never be
               ;; resolved or opened, and would sit on the foresight board
               ;; as an unclaimed name forever.
               (user-error "org-upwell: no such file, and not a URL: %s" path)))

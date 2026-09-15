@@ -315,7 +315,7 @@ This is foresight's C: the work already happened, the clock lands later."
                            (org-upwell-claimed-to "ONE"))))))
 
 (ert-deftest org-upwell-test-one-file-two-headings ()
-  "A single item can be claimed by two user headings."
+  "A single thing can be claimed by two headings."
   (org-upwell-test--with-dir
    (let ((m (org-upwell-save (list :url "https://a.sharepoint.com/:x:/r/shared.xlsx"
                                    :name "shared.xlsx"))))
@@ -1116,7 +1116,7 @@ walked, and a nil in the list must not reach `file-directory-p'."
                      org-upwell-dnd-handlers)))))
 
 (ert-deftest org-upwell-test-pin-refuses-a-path-that-is-not-there ()
-  "An item with no appearance can never be resolved, opened or cleared."
+  "A record with no appearance can never be resolved, opened or cleared."
   (org-upwell-test--with-dir
    (cl-letf (((symbol-function 'org-upwell--current-heading-marker)
               (lambda () nil)))
@@ -1158,7 +1158,7 @@ the store several times over and a day of them walked it hundreds of times."
    (should (= 1 org-upwell--store-walks))))
 
 (ert-deftest org-upwell-test-one-pass-writes-the-store-once ()
-  "Saving after every item wrote the file once per trace."
+  "Saving after every record wrote the file once per trace."
   (org-upwell-test--with-dir
    (org-upwell-test--trace-day dir 20)
    (let ((writes 0)
@@ -1231,7 +1231,11 @@ was selected.  A nameless item is a blank line on the bench."
                    (cons "path" "/Users/me/Documents/project/")
                    (cons "kind" "dir")))))
     (should (equal (plist-get tr :name) "project"))
-    (should (equal (plist-get (org-upwell-trace-to-spec tr) :name) "project"))))
+    ;; the spec suggests it rather than deciding it, so the store takes it
+    ;; only where it has no name of its own
+    (should (equal (plist-get (org-upwell-trace-to-spec tr) :seen-as)
+                   "project"))
+    (should-not (plist-get (org-upwell-trace-to-spec tr) :name))))
 
 (ert-deftest org-upwell-test-pinning-a-directory-names-it ()
   (org-upwell-test--with-dir
@@ -1333,7 +1337,7 @@ has no business leaving a mark."
      (should-not (org-with-point-at mk (org-id-get))))))
 
 (ert-deftest org-upwell-test-sync-keeps-a-directory-seen-off-the-clock ()
-  "Off the clock a trace becomes an unclaimed item, a row to deal with
+  "Off the clock a trace becomes a record nothing holds, a row to deal with
 later.  A directory is such a row like any other now."
   (org-upwell-test--with-dir
    (let ((directory (expand-file-name "procurement" dir)))
@@ -1659,9 +1663,68 @@ comes back on the next pass, so dropping has to be written down."
                  (org-upwell-claim-status
                   (plist-get (org-upwell-find :path p) :claims) "T1"))))))
 
-(ert-deftest org-upwell-test-bench-forget-deletes-the-item ()
-  "Dropping keeps the item and says it is not this heading's.  Forgetting
-leaves nothing to propose it again anywhere."
+(ert-deftest org-upwell-test-forgetting-survives-the-next-pass ()
+  "The trace log still holds the sighting that minted it, and the
+intersection runs every minute -- so a record deleted at three o'clock was
+minted again four minutes later and the key looked broken.  The no is
+written down, for the same reason a rejection is."
+  (org-upwell-test--with-dir
+    (let* ((p (expand-file-name "doc.xlsx" dir))
+           (spec (list :seen-as "doc - Excel" :path p :provenance "trace")))
+      (write-region "x" nil p)
+      (org-upwell-save spec)
+      (org-upwell-forget (org-upwell-find :path p))
+      ;; the watcher saw it again a minute later
+      (org-upwell-save spec)
+      (should (org-upwell-forgotten-p (org-upwell-find :path p)))
+      (should-not (seq-find (lambda (m) (equal (plist-get m :path) p))
+                            (org-upwell-live-items)))
+      ;; nor does the clock bring it back: a provisional claim is the
+      ;; watcher speaking, and it was the watcher that got it forgotten
+      (org-upwell-claim (org-upwell-find :path p) "T1" 'provisional)
+      (should (org-upwell-forgotten-p (org-upwell-find :path p)))
+      ;; a person's yes does, because it outranks their earlier no -- and
+      ;; pinning is how that is said from the keyboard, since a forgotten
+      ;; thing is on no listing to press a key on
+      (let ((file (org-upwell-test--write-journal
+                   "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
+        (cl-letf (((symbol-function 'org-upwell--current-heading-marker)
+                   (lambda () (org-upwell-test--heading-marker file))))
+          (org-upwell-pin p)))
+      (should-not (org-upwell-forgotten-p (org-upwell-find :path p)))
+      (should (seq-find (lambda (m) (equal (plist-get m :path) p))
+                        (org-upwell-live-items))))))
+
+(ert-deftest org-upwell-test-a-name-somebody-chose-outlives-the-watcher ()
+  "What a window was called is a sighting; a name in the store was a
+decision.  Tidying one used to last until the next pass of the
+intersection put the browser's own words back."
+  (org-upwell-test--with-dir
+    (let* ((p (expand-file-name "quote - Excel.xlsx" dir))
+           (spec (list :seen-as "quote - Excel" :path p :provenance "trace")))
+      (write-region "x" nil p)
+      (org-upwell-save spec)
+      (should (equal "quote - Excel" (plist-get (org-upwell-find :path p) :name)))
+      ;; somebody tidies it
+      (org-upwell-save (plist-put (copy-sequence (org-upwell-find :path p))
+                                  :name "quote"))
+      ;; and the watcher goes on seeing the window it was called in
+      (org-upwell-save spec)
+      (should (equal "quote" (plist-get (org-upwell-find :path p) :name))))))
+
+(ert-deftest org-upwell-test-how-it-came-to-be-known-is-its-first-answer ()
+  "A file somebody pinned does not become a trace because the watcher
+noticed it afterwards, any more than it was captured twice."
+  (org-upwell-test--with-dir
+    (let ((p (expand-file-name "doc.xlsx" dir)))
+      (write-region "x" nil p)
+      (org-upwell-save (list :path p :name "doc.xlsx" :provenance "pin"))
+      (org-upwell-save (list :path p :seen-as "doc - Excel" :provenance "trace"))
+      (should (equal "pin" (plist-get (org-upwell-find :path p) :provenance))))))
+
+(ert-deftest org-upwell-test-bench-forget-takes-it-off-every-listing ()
+  "Dropping keeps the record and says it is not this heading's.  Forgetting
+says it was not worth recording at all, and nothing lists it again."
   (org-upwell-test--with-dir
    (let* ((p (expand-file-name "doc.xlsx" dir))
           (other (expand-file-name "keep.xlsx" dir))
@@ -1683,8 +1746,14 @@ leaves nothing to propose it again anywhere."
        (beginning-of-line)
        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
          (org-upwell-bench-forget)))
-     (should-not (org-upwell-find :path p))
-     (should (org-upwell-find :path other)))))
+     ;; gone from what anybody reads
+     (should-not (seq-find (lambda (m) (equal (plist-get m :path) p))
+                           (org-upwell-live-items)))
+     (should (seq-find (lambda (m) (equal (plist-get m :path) other))
+                       (org-upwell-live-items)))
+     ;; and the no is written down, which is what makes it stick
+     (should (org-upwell-forgotten-p (org-upwell-find :path p)))
+     (should-not (plist-get (org-upwell-find :path p) :claims)))))
 
 ;;;; The window the file lands in
 
@@ -1810,7 +1879,7 @@ decides what Org does.  Both may be on, and then both happen."
            "\n:END:\n** NEXT Child task\n:PROPERTIES:\n:ID: C\n:END:\n")))
 
 (ert-deftest org-upwell-test-where-the-work-is-done-is-in-the-header ()
-  "In the header rather than among the rows.  Every row is a stored item and
+  "In the header rather than among the rows.  Every row is a record and
 every row command expects one, so a row for a directory nothing stored would
 look like the others and answer to half their keys."
   (org-upwell-test--with-dir
@@ -2110,7 +2179,7 @@ its folder name is then read for an extension."
                          (string (char-after)))))))))
 
 (ert-deftest org-upwell-test-forgetting-from-the-grid-removes-it ()
-  "`org-upwell-forget' takes the item and reads its id out of it.  Handed
+  "`org-upwell-forget' takes the record and reads its id out of it.  Handed
 the id instead it found nothing to read, deleted nothing, and said nothing
 -- the row was still there after answering yes."
   (org-upwell-test--with-dir
@@ -2126,7 +2195,8 @@ the id instead it found nothing to read, deleted nothing, and said nothing
           (org-upwell-matrix-forget))
         (should-not (string-match-p "doomed"
                                     (substring-no-properties (buffer-string)))))
-      (should-not (org-upwell-find :name "doomed")))))
+      (should-not (seq-find (lambda (m) (equal (plist-get m :name) "doomed"))
+                            (org-upwell-live-items))))))
 
 (ert-deftest org-upwell-test-open-all-asks-above-the-cap ()
   "The bench is the one place that opens in bulk, so it is the one place
@@ -2427,7 +2497,7 @@ than off the edge."
         (should (<= (string-width line) width))))))
 
 (ert-deftest org-upwell-test-the-legend-separates-row-from-page ()
-  "A row command pressed on the title line says only that there is no item
+  "A row command pressed on the title line says only that there is nothing
 there, which is a puzzle rather than an explanation.  So the foot says which
 is which."
   (with-temp-buffer
@@ -2575,7 +2645,6 @@ things a save compares."
         (org-back-to-heading t)
         (org-entry-delete (point) org-upwell-prop-kind)
         (save-buffer))
-      (org-upwell--store-drop (plist-get (org-upwell-find :path sub) :id))
       (should-not (plist-get (org-upwell-find :path sub) :kind))
       (org-upwell-save (list :path sub))
       (should (equal "dir" (plist-get (org-upwell-find :path sub) :kind))))))
@@ -2807,7 +2876,7 @@ answered yet -- there is a key for answering it."
           (should (string-search "quote.xlsx" text)))))))
 
 (ert-deftest org-upwell-test-both-sections-share-one-set-of-columns ()
-  "One width for both, computed over every item, or the columns step at the
+  "One width for both, computed over every row, or the columns step at the
 break."
   (org-upwell-test--with-dir
     (let* ((sub (expand-file-name "a" dir))
@@ -3400,7 +3469,7 @@ would guess the directory it is already in."
            "* Elsewhere\n:PROPERTIES:\n:ID: X\n:END:\n")))
 
 (defun org-upwell-test--claim-to (spec ids status)
-  "Save SPEC and claim it to each of IDS at STATUS.  Return the item.
+  "Save SPEC and claim it to each of IDS at STATUS.  Return the record.
 
 Threaded, because the claims written are the ones on the item handed in:
 claiming the same thing twice from the same plist drops the first."
@@ -3983,7 +4052,7 @@ any, this line when there are none."
         (should-not org-upwell-matrix--marked))
       (should (equal '("two")
                      (mapcar (lambda (m) (plist-get m :name))
-                             (org-upwell-items)))))))
+                             (org-upwell-live-items)))))))
 
 (ert-deftest org-upwell-test-with-no-marks-the-row-is-the-target ()
   "Marks when there are any, this line when there are none -- so the key
@@ -4002,7 +4071,7 @@ does the obvious thing before anybody has learnt about marking."
           (org-upwell-matrix-forget)))
       (should (equal '("two")
                      (mapcar (lambda (m) (plist-get m :name))
-                             (org-upwell-items)))))))
+                             (org-upwell-live-items)))))))
 
 (ert-deftest org-upwell-test-unmarking-leaves-everything-else-alone ()
   "Marking is a list to act on, not an act."

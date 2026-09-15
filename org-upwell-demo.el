@@ -189,7 +189,7 @@ as the one above it says so."
                    (list :url "https://contoso.sharepoint.com/:p:/r/sites/proc/Doc.aspx?sourcedoc=%7B1%7D"
                          :name "Vendor day deck"
                          :provenance "demo"))))
-        ;; Threaded: the claims written are the ones on the item handed in.
+        ;; Threaded: the claims written are the ones on the record handed in.
         (setq deck (org-upwell-claim deck org-upwell-demo-id-quotes 'confirmed))
         (org-upwell-claim deck org-upwell-demo-id-url 'provisional))
       ;; and a page is not a document

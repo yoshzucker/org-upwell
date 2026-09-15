@@ -163,7 +163,7 @@ redrawn."
 (defun org-upwell-claim-interval (marker from to &optional provenance)
   "Provisionally claim traces in [FROM, TO) to the heading at MARKER.
 
-Return the list of item plists newly or still provisionally attributed.
+Return the records newly or still provisionally attributed.
 Already-confirmed claims for this heading are left alone, and things a
 person rejected for it are not proposed again.  PROVENANCE is recorded
 on a newly created record (default `trace')."
@@ -296,8 +296,8 @@ was already begun, and a listing that takes the keyboard eats it."
   (when (fboundp 'org-upwell-bench)
     (save-selected-window
       (org-upwell--bench-draw (org-upwell-domain marker)))
-    (message "org-upwell: %d file(s) attributed -- c keeps, d drops"
-             (length items))))
+    (message "org-upwell: %d thing%s attributed -- c keeps, d drops"
+             (length items) (if (= 1 (length items)) "" "s"))))
 
 (defun org-upwell--reassign-loop (items from-id)
   "Interactively reassign ITEMS away from FROM-ID."

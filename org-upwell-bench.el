@@ -401,7 +401,7 @@ file name so two \"File the photos\" do not collapse."
                (when (member (org-get-todo-state) '("NEXT" "ONGO" "WAIT"))
                  (add (point-marker))))
              nil 'file))))
-      (dolist (m (org-upwell-items))
+      (dolist (m (org-upwell-live-items))
         (dolist (c (plist-get m :claims))
           (when-let ((id (plist-get c :id))
                      (mk (org-id-find id 'marker)))
@@ -484,7 +484,7 @@ cursor ends up on the bench: asking for a list is asking to read it."
              (if (= (length items) 1) "" "s"))))
 
 (defun org-upwell-bench-clock ()
-  "The bench of the heading currently being clocked."
+  "Lay the heading being clocked out on the bench."
   (interactive)
   (unless (and (markerp org-clock-hd-marker)
                (marker-buffer org-clock-hd-marker))
@@ -492,7 +492,7 @@ cursor ends up on the bench: asking for a list is asking to read it."
   (org-upwell-bench org-clock-hd-marker))
 
 (defun org-upwell-bench-id (id)
-  "The bench of the heading whose org-id is ID."
+  "Lay the heading whose org-id is ID out on the bench."
   (let ((m (org-id-find id 'marker)))
     (unless m (user-error "org-upwell: no heading with id %s" id))
     (org-upwell-bench m)))
@@ -502,10 +502,10 @@ cursor ends up on the bench: asking for a list is asking to read it."
   (interactive
    (list (completing-read
           "File: "
-          (mapcar (lambda (m) (plist-get m :name)) (org-upwell-items))
+          (mapcar (lambda (m) (plist-get m :name)) (org-upwell-live-items))
           nil t)))
   (let ((m (seq-find (lambda (it) (equal (plist-get it :name) name))
-                     (org-upwell-items))))
+                     (org-upwell-live-items))))
     (unless m (user-error "Nothing stored is named %s" name))
     (org-upwell-open m)))
 
@@ -831,9 +831,9 @@ the title it sits under."
       ;; held to the beginning of the line by `j\=' and `k\=', and a button
       ;; that started three words in was a button RET never landed on.
       ;;
-      ;; A button and not a row: the row commands all want a stored item and
+      ;; A button and not a row: the row commands all want a record and
       ;; this is a fact about the heading.  RET falls through to
-      ;; `push-button\=' when there is no item on the line, so this is the
+      ;; `push-button\=' when there is nothing on the line, so this is the
       ;; whole of what opening it needs.
       (make-text-button
        (concat label shown mark) nil
@@ -857,7 +857,7 @@ the title it sits under."
            (cdr where)))))
 
 (defun org-upwell--copy-of (item items)
-  "Return the item among ITEMS that ITEM is a local copy of, or nil.
+  "Return the one among ITEMS that ITEM is a local copy of, or nil.
 
 Opening a document on SharePoint and then downloading it leaves two
 things, and they stay two things: one is a URL somebody else can open and
@@ -893,7 +893,7 @@ be called a copy of each other.  It marks a row; it changes nothing."
         (push c out)))))
 
 (defun org-upwell--bench-insert-sections (domain buf)
-  "Insert DOMAIN\='s items into BUF, directories first.
+  "Insert what DOMAIN holds into BUF, directories first.
 
 Two sections rather than one list.  Sorted in among the files, the place
 the work is kept moves every time a file is added or renamed, and it is
@@ -929,7 +929,7 @@ across the break."
             (org-upwell--bench-insert-item m domain widths)))))))
 
 (defun org-upwell--bench-insert-item (m domain widths)
-  "Insert one item line for M under DOMAIN, in the columns WIDTHS."
+  "Insert one row for M under DOMAIN, in the columns WIDTHS."
   (let* ((name (or (plist-get m :name) "?"))
          (id (plist-get m :id))
          (st (let ((hid (plist-get domain :id)))
@@ -1036,7 +1036,7 @@ The bench window is left as the bench."
     (org-upwell-open m 'emacs)))
 
 (defun org-upwell-bench-open-all ()
-  "Open every item on the current domain, and its LOCATION if that is a URL.
+  "Open everything this heading holds, and its LOCATION if that is a URL.
 
 The one command in the package that opens in bulk, and it is on the
 bench because that is where the list can be seen first.  Above
@@ -1067,7 +1067,7 @@ starting at once."
     (message "org-upwell: opened %d file%s" n (if (= n 1) "" "s"))))
 
 (defun org-upwell-bench-open-marked ()
-  "Open marked items, or the item at point if none are marked."
+  "Open the marked rows, or the one at point if none are marked."
   (interactive)
   (if (null org-upwell-bench-marked)
       (org-upwell-bench-open-at-point)
@@ -1082,7 +1082,7 @@ starting at once."
       (message "org-upwell: opened %d marked file%s" n (if (= n 1) "" "s")))))
 
 (defun org-upwell--bench-goto-line-after (line)
-  "Go to the line below LINE, or to the next item below that.
+  "Go to the line below LINE, or to the next row below that.
 
 Marking moves down, the way dired does, so the hand can mark a run of
 them without also moving.  With the listing in two sections the line
@@ -1094,7 +1094,7 @@ the next `m\=' with nothing to mark."
               (not (org-upwell--bench-item-at-point)))
     (forward-line 1))
   (when (eobp)
-    ;; Off the end: the last item is a better place to be than the foot.
+    ;; Off the end: the last row is a better place to be than the foot.
     (while (and (not (bobp))
                 (not (org-upwell--bench-item-at-point)))
       (forward-line -1))))
@@ -1115,7 +1115,7 @@ the next `m\=' with nothing to mark."
     (org-upwell--bench-goto-line-after line)))
 
 (defun org-upwell-bench-unmark ()
-  "Unmark the item on this line, then move to the next."
+  "Unmark this row, then move to the next."
   (interactive)
   (let* ((m (org-upwell--bench-item-at-point))
          (id (and m (plist-get m :id)))
@@ -1127,7 +1127,7 @@ the next `m\=' with nothing to mark."
       (org-upwell--bench-goto-line-after line))))
 
 (defun org-upwell-bench-mark-toggle-all ()
-  "Mark all items, or unmark all if every item is already marked."
+  "Mark every row, or unmark them all if every one is marked already."
   (interactive)
   (let ((ids (delq nil
                    (mapcar (lambda (m) (plist-get m :id))
@@ -1140,7 +1140,7 @@ the next `m\=' with nothing to mark."
     (org-upwell--bench-draw org-upwell-bench-domain)))
 
 (defun org-upwell-bench-unmark-all ()
-  "Unmark every item on the bench.
+  "Unmark every row on the bench.
 
 No prompt: the bench is a handful of files, not a dired of thousands."
   (interactive)
@@ -1148,7 +1148,7 @@ No prompt: the bench is a handful of files, not a dired of thousands."
   (org-upwell--bench-draw org-upwell-bench-domain))
 
 (defun org-upwell--bench-target-items ()
-  "Return the marked items, or the item on this line.
+  "Return the marked records, or the one on this line.
 
 The rule `x' already uses: marks when there are any, this line when there
 are none.  A command that writes to the store is not the place to guess
@@ -1216,7 +1216,7 @@ elsewhere, so redrawing never switches the list underneath you."
        ((> n 0) (message "org-upwell: %d new" n))))))
 
 (defun org-upwell-bench-keep ()
-  "Keep the marked items, or this one, on this heading.
+  "Keep the marked things, or this one, on this heading.
 
 The clock proposes; this is where a person agrees.  A kept claim is not
 downgraded by a later pass."
@@ -1230,7 +1230,7 @@ downgraded by a later pass."
     (message "org-upwell: kept %d" (length items))))
 
 (defun org-upwell-bench-drop ()
-  "Take the marked items, or this one, off this heading.
+  "Drop the marked things, or this one, from this heading.
 
 Written down as a rejection rather than forgotten: the intersection runs
 again on a timer and would otherwise put the same file back on the same
@@ -1245,23 +1245,34 @@ heading.  The record itself stays in the store, and so does the file."
     (message "org-upwell: dropped %d from this heading" (length items))))
 
 (defun org-upwell-bench-forget ()
-  "Delete the marked items, or this one, from the store.
+  "Forget the marked rows, or this one: off every listing, for good.
 
-`d' says the file does not belong here.  This says the item was not worth
-recording at all.  The file on disk is not touched."
+`d\=' says the thing does not belong to this heading.  This says it was not
+worth recording at all -- a download opened once, a URL caught by
+mistake.  The file on disk is not touched, and neither is any other
+heading\='s claim, because there are none left to touch.
+
+The no is written down rather than the record simply deleted: the
+watcher\='s log still holds the sighting that minted it, and a record
+deleted while the intersection is running comes back on its next pass.
+
+Pinning the thing again undoes it -- dropping it on a bench,
+\[org-upwell-bench-add-file], \[org-upwell-bench-add-url] -- because a
+person saying yes outranks the same person\='s earlier no.  Nothing else
+does: the watcher goes on seeing what it always saw, and that is the
+sighting that was being answered."
   (interactive)
   (let* ((items (org-upwell--bench-target-items))
          (n (length items)))
     (when (yes-or-no-p
-           (format "Delete %d item%s from %s?  The file%s stay%s. "
+           (format "Forget %d thing%s?  The file%s stay%s on disk. "
                    n (if (= n 1) "" "s")
-                   (file-name-nondirectory (org-upwell-file))
                    (if (= n 1) "" "s") (if (= n 1) "s" "")))
       (org-upwell-with-store
         (dolist (m items)
           (org-upwell-forget m)))
       (org-upwell--bench-redraw)
-      (message "org-upwell: forgot %d" n))))
+      (message "org-upwell: forgot %d; pin it again to bring one back" n))))
 
 (defun org-upwell--unheld-candidates (heading-id)
   "Return (LABEL . ITEM) for stored things HEADING-ID does not hold.
@@ -1285,7 +1296,7 @@ the first time either was changed."
                            (or (plist-get m :name) "?")
                            (or (org-upwell--item-where m) ""))
                    m)))
-         (org-upwell-items))))
+         (org-upwell-live-items))))
 
 (defun org-upwell-bench-other-heading ()
   "Lay another heading out on this bench.
@@ -1300,7 +1311,7 @@ heading comes to mind, so the way to it belongs here.
   (org-upwell-bench (org-upwell--read-heading-marker)))
 
 (defun org-upwell-bench-add ()
-  "Bring something this heading does not hold onto it, and keep it.
+  "Bring another thing in: one the store knows and this heading does not.
 
 The other half of \\[org-upwell-bench-reassign].  A document belongs to two
 tasks often enough -- the spec the last one was written against is the spec
@@ -1324,7 +1335,7 @@ Claimed as an answer rather than a proposal, because somebody chose it."
       (message "org-upwell: %s kept here" (plist-get m :name)))))
 
 (defun org-upwell-bench-copy-to ()
-  "Put the marked things, or this one, on another heading as well.
+  "Keep the marked things, or this one, on another heading as well.
 
 \\[org-upwell-bench-reassign] moves: it says no here and yes there, which is
 right when the thing was filed under the wrong task.  This one only says yes
@@ -1352,7 +1363,7 @@ that could only hand things away could not say so."
     (message "org-upwell: %d kept on \"%s\" as well" n title)))
 
 (defun org-upwell-bench-reassign ()
-  "Move the marked items, or this one, to another heading."
+  "Hand the marked things, or this one, to another heading."
   (interactive)
   (let ((id (org-upwell--bench-heading-id))
         (items (org-upwell--bench-target-items)))
@@ -1508,8 +1519,8 @@ nothing to look up.  What the reader picks is the text that will be taken
 off their names, which is the honest thing to be choosing anyway.
 
 Where one run is shared at both ends, the second is keyed with a mark after
-it: two candidates cannot be one string, and the entry behind the key still
-carries the real run."
+it: two candidates cannot be one string, and what stands behind the key
+still carries the real run."
   (let (table)
     (dolist (f found (nreverse table))
       (let ((key (car f)))
@@ -1571,7 +1582,7 @@ it has to work on are the ones the last one left."
   (let* ((affix (car f))
          (end (cadr f))
          moved)
-    (dolist (m (org-upwell-items) (nreverse moved))
+    (dolist (m (org-upwell-live-items) (nreverse moved))
       (let* ((name (or (plist-get m :name) ""))
              (new (cond
                    ((and (eq end 'head) (string-prefix-p affix name))
@@ -1600,7 +1611,7 @@ off the names changes what the rest of them share."
      (catch 'done
        (while t
          (let* ((names (delq nil (mapcar (lambda (m) (plist-get m :name))
-                                         (org-upwell-items))))
+                                         (org-upwell-live-items))))
                 (found (org-upwell--tidy-affixes names)))
            (unless found
              (when first
@@ -1648,7 +1659,7 @@ each was erased by the next, and the last by the closing count."
 
 ;;;###autoload
 (defun org-upwell-copy-from (from)
-  "Copy another heading's items onto this one, provisionally.
+  "Copy what another heading holds onto this one, provisionally.
 
 The shape GTD keeps making: the next task is the last one continued, and
 it wants the same three files.  Bringing the set over and dropping what
@@ -1710,9 +1721,9 @@ property `org-upwell-create\' puts new files in -- one fact, not two."
     (org-with-point-at marker
       (org-back-to-heading t)
       (org-entry-put (point) "UPWELL_DIR" (abbreviate-file-name dir)))
-    (message "org-upwell: work here -- %s  (%s)"
-             (abbreviate-file-name dir)
-             (org-with-point-at marker (org-get-heading t t t t)))
+    (message "org-upwell: work on \"%s\" is done in %s"
+             (org-with-point-at marker (org-get-heading t t t t))
+             (abbreviate-file-name dir))
     dir))
 
 ;;;###autoload
@@ -1854,7 +1865,7 @@ directory, and \"work here\" reads as a statement about the buffer rather
 than about a place on disk.")
 
 (defun org-upwell-bench-pin-directory ()
-  "Keep the place this row lives in, as an item of its own.
+  "Record the directory this row lives in as a thing of its own.
 
 The same place \\[org-upwell-open-directory] goes to: for a file, the
 directory holding it; for a directory, the one above.  Where the work is
@@ -1879,12 +1890,12 @@ the one whose sighting you dropped."
       (message "org-upwell: kept %s" (abbreviate-file-name place)))))
 
 (defun org-upwell-bench-add-file (path)
-  "Claim PATH to the heading this bench is showing."
+  "Add the file PATH to what this heading holds."
   (interactive (list (read-file-name "Add to this heading: " nil nil t)))
   (org-upwell-pin path (plist-get org-upwell-bench-domain :marker) "pin"))
 
 (defun org-upwell-bench-add-url (url)
-  "Claim URL to the heading this bench is showing."
+  "Add URL to what this heading holds."
   (interactive "sAdd URL to this heading: ")
   (org-upwell-pin url (plist-get org-upwell-bench-domain :marker) "pin"))
 
@@ -1901,7 +1912,7 @@ column that would cost every other row."
   :group 'org-upwell)
 
 (defun org-upwell-bench-eldoc-function (&rest _)
-  "Say what the item on this line is, whole.
+  "Say what the row under the cursor is, whole.
 
 For `eldoc-documentation-functions\='.  The name in full and where it actually
 is: the two things the row had to shorten."
@@ -1927,31 +1938,34 @@ is: the two things the row had to shorten."
 
 (defconst org-upwell-bench-commands
   '((org-upwell-bench-open-at-point    thing "open it")
-    (org-upwell-bench-open-in-emacs    thing "open in Emacs")
+    (org-upwell-bench-open-in-emacs    thing "open it in Emacs")
     (org-upwell-open-directory         thing "go to its directory")
-    (org-upwell-bench-move-here        thing "move it to the work")
-    (org-upwell-work-directory         page  "the work directory")
-    (org-upwell-bench-pin-directory    held  "keep its directory")
-    (org-upwell-bench-toggle-mark      held  "mark, move down")
-    (org-upwell-bench-unmark           held  "unmark, move up")
+    (org-upwell-bench-move-here        thing "move the file to work")
+    ;; Read down a column rather than across a row, which is the order the
+    ;; foot is drawn in: yes, no, and the two that say which rows the next
+    ;; yes or no is about; then the four that reach past this heading.
     (org-upwell-bench-keep             held  "keep it here")
-    (org-upwell-bench-drop             held  "drop from here")
+    (org-upwell-bench-drop             held  "drop it from here")
+    (org-upwell-bench-toggle-mark      held  "mark")
+    (org-upwell-bench-unmark           held  "unmark")
+    (org-upwell-bench-pin-directory    held  "record its directory")
     (org-upwell-bench-reassign         held  "hand to another heading")
-    (org-upwell-bench-copy-to          held  "keep on another too")
+    (org-upwell-bench-copy-to          held  "keep it on another too")
     (org-upwell-bench-forget           held  "forget it everywhere")
+    (org-upwell-work-directory         page  "go to the work directory")
     (org-upwell-bench-open-all         page "open every one")
     (org-upwell-bench-open-marked      page "open the marked")
-    (org-upwell-bench-mark-toggle-all  page "invert marks")
+    (org-upwell-bench-mark-toggle-all  page "invert the marks")
     (org-upwell-bench-unmark-all       page "unmark them all")
-    (org-upwell-bench-redraw           page "read the store")
+    (org-upwell-bench-redraw           page "read the store again")
     (org-upwell-bench-add-file         page "add a file")
     (org-upwell-bench-add-url          page "add a URL")
-    (org-upwell-bench-add              page "bring another in")
+    (org-upwell-bench-add              page "bring another thing in")
     (org-upwell-copy-from              page "copy from a heading")
     (org-upwell-tidy-names             page "tidy the names")
     (org-upwell-bench-other-heading    page "show another heading")
-    (org-upwell-matrix                 page "the family, as a grid")
-    (org-upwell-visit-store            page "the store itself")
+    (org-upwell-matrix                 page "show the family")
+    (org-upwell-visit-store            page "open the store")
     (org-upwell-bench-quit             page "hide the bench"))
   "What the foot of the bench names: (COMMAND SCOPE WHAT).
 
@@ -2058,10 +2072,10 @@ The echo area says what the line at point is, in full -- the name and
 where it actually is, which are the two things a column had to shorten.
 
 `c' and `d' are the two answers to a claim the clock proposed: keep it
-on this heading, or take it off and have that stay said.  `D' deletes
-the item from the store.  `R' moves it to another heading.  `+' and
-`L' add a file and a URL.  All of them act on the marks when there are
-marks, and on this line when there are none.
+on this heading, or drop it and have that stay said.  `D' forgets it
+everywhere.  `R' hands it to another heading.  `+' and `L' add a file
+and a URL.  All of them act on the marks when there are marks, and on
+this line when there are none.
 
 The foot of the buffer names all of this, with the key each one is on
 in this buffer -- read from the keymap, so it stays true wherever a

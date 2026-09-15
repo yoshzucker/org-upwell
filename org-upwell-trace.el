@@ -271,7 +271,10 @@ vocabulary, and this package speaks its own.")
 from the trace: the Windows watcher reports a selected directory as a
 file, so the field alone is not the answer.  It goes to the store as a
 string, because a property value is a string."
-  (list :name (plist-get trace :name)
+  ;; `:seen-as\=' rather than `:name\=': what a window was called is a sighting,
+  ;; and a name already in the store was somebody\='s decision.  The store
+  ;; takes this only where it has nothing.
+  (list :seen-as (plist-get trace :name)
         :path (plist-get trace :path)
         :url (plist-get trace :url)
         :office (plist-get trace :office)

@@ -116,7 +116,7 @@ for.  A heading with no id holds nothing, so it has nothing to show."
       (nreverse out))))
 
 (defun org-upwell-matrix--items (columns)
-  "Return the items claimed by any of COLUMNS, ordered as the bench orders."
+  "Return the things any of COLUMNS claims, ordered as the bench orders."
   (let ((ids (delq nil (mapcar (lambda (c) (nth 1 c)) columns)))
         seen out)
     (dolist (id ids)
@@ -130,7 +130,7 @@ for.  A heading with no id holds nothing, so it has nothing to show."
             (seq-remove #'org-upwell-directory-item-p out))))
 
 (defun org-upwell-matrix--unclaimed ()
-  "Return the stored items no heading holds, ordered as the grid orders.
+  "Return the stored things no heading holds, ordered as the grid orders.
 
 Drawn under the grid because attaching one is the move the grid is worst
 at.  Taking a thing off a heading is easy here -- the mark is in front of
@@ -142,7 +142,7 @@ and these are exactly the candidates.
 
 Global rather than of this family, and that is what they are: a thing
 attached to nothing is a thing any column here could take."
-  (let ((out (seq-filter #'org-upwell-unclaimed-p (org-upwell-items))))
+  (let ((out (seq-filter #'org-upwell-unclaimed-p (org-upwell-live-items))))
     (append (seq-filter #'org-upwell-directory-item-p out)
             (seq-remove #'org-upwell-directory-item-p out))))
 
@@ -256,7 +256,7 @@ reader has been reading it all day, in the file this was taken from."
     (setq org-upwell-matrix--column-marks (nreverse marks))))
 
 (defun org-upwell-matrix--insert-row (m columns widths)
-  "Insert the row for item M across COLUMNS, in WIDTHS."
+  "Insert the row for the thing M across COLUMNS, in WIDTHS."
   (let* ((name (or (plist-get m :name) "?"))
          (start (point)))
     (insert (if (member (plist-get m :id) org-upwell-matrix--marked) "* " "  "))
@@ -334,24 +334,24 @@ grid\", which is true and useless."
     (org-upwell-matrix-forward-column   move   "a column right")
     (org-upwell-matrix-previous-row     move   "a row up")
     (org-upwell-matrix-next-row         move   "a row down")
-    (org-upwell-matrix-widen            family "out to the parent")
-    (org-upwell-matrix-narrow           family "in to this column")
-    (org-upwell-matrix-choose           family "another heading")
-    (org-upwell-matrix-unlink           cell   "take it off")
+    (org-upwell-matrix-widen            family "widen to the parent")
+    (org-upwell-matrix-narrow           family "narrow to this column")
+    (org-upwell-matrix-choose           family "show another heading")
+    (org-upwell-matrix-unlink           cell   "take this claim off")
     (org-upwell-matrix-keep             cell   "keep it there")
-    (org-upwell-matrix-add              column "bring one in")
+    (org-upwell-matrix-add              column "bring another thing in")
     (org-upwell-matrix-copy-column      column "copy this column")
     (org-upwell-matrix-goto             column "go to the heading")
-    (org-upwell-matrix-visit-store      row    "its record in the store")
+    (org-upwell-matrix-visit-store      row    "open its record")
     (org-upwell-matrix-open             row    "open it")
     (org-upwell-open-directory          row    "go to its directory")
     (org-upwell-matrix-rename           row    "rename it")
-    (org-upwell-matrix-toggle-mark      row    "mark, move down")
+    (org-upwell-matrix-toggle-mark      row    "mark")
     (org-upwell-matrix-unmark-all       page   "unmark them all")
-    (org-upwell-matrix-forget           row    "forget it")
+    (org-upwell-matrix-forget           row    "forget it everywhere")
     (org-upwell-tidy-names              page   "tidy the names")
-    (org-upwell-matrix-redraw           page   "read again")
-    (org-upwell-matrix-quit             page   "close"))
+    (org-upwell-matrix-redraw           page   "read the store again")
+    (org-upwell-matrix-quit             page   "close the grid"))
   "What the foot of the grid names: (COMMAND SCOPE WHAT).
 
 Moving is named here and not on the bench because on a bench the cursor
@@ -484,7 +484,7 @@ not the place to guess more widely than that."
         (list m))))
 
 (defun org-upwell-matrix--rows-now ()
-  "Return the items this grid is drawing, read off the buffer."
+  "Return the records this grid is drawing, read off the buffer."
   (let (out)
     (save-excursion
       (goto-char (point-min))
@@ -552,7 +552,7 @@ at a time."
        (dolist (m items) (org-upwell-forget m)))
       (setq org-upwell-matrix--marked nil)
       (org-upwell-matrix-redraw)
-      (message "org-upwell: %d forgotten" n))))
+      (message "org-upwell: forgot %d; pin it again to bring one back" n))))
 
 (defun org-upwell-matrix-visit-store ()
   "Visit the store\='s record of this thing.
