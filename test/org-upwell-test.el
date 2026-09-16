@@ -2135,6 +2135,94 @@ the answer came is part of the answer."
           (should (string-match-p "downloads" header))
           (should (string-match-p (regexp-quote "main?") header)))))))
 
+(ert-deftest org-upwell-test-asking-from-dired-is-not-asking-org-about-dired ()
+  "A nil car in `org-refile-targets' means the buffer you are in, and Org
+refuses to gather candidates from one that is not in Org mode -- which is
+what asking from dired is, and dired is one of the doors this package puts
+on the question.  The error was \"Major mode in refile target buffer must be
+`org-mode'\", from Org, about a buffer nobody was proposing as an answer."
+  (org-upwell-test--with-dir
+    (let ((sub (expand-file-name "acme" dir))
+          (file (org-upwell-test--write-journal
+                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+          (org-refile-targets '((nil :maxlevel . 6)
+                                (org-agenda-files :maxlevel . 6))))
+      (make-directory sub t)
+      (with-current-buffer (find-file-noselect sub)
+        (should (derived-mode-p 'dired-mode))
+        ;; the buffer in hand is not among the places asked
+        (should (equal '((org-agenda-files :maxlevel . 6))
+                       (org-upwell--refile-targets-here)))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_p coll &rest _) (car (car coll)))))
+          (should (markerp (org-upwell--read-any-heading-marker "Which: ")))))
+      ;; and from Org the list is whatever was configured, untouched
+      (with-current-buffer (find-file-noselect file)
+        (org-mode)
+        (should (equal org-refile-targets
+                       (org-upwell--refile-targets-here))))
+      ;; with the current buffer the only thing configured, dropping it
+      ;; would leave no list -- the agenda files are the list instead
+      (with-current-buffer (find-file-noselect sub)
+        (let ((org-refile-targets '((nil :maxlevel . 6))))
+          (should (equal '((org-agenda-files :maxlevel . 5))
+                         (org-upwell--refile-targets-here))))))))
+
+(ert-deftest org-upwell-test-the-place-can-be-made-where-it-is-named ()
+  "Saying where the work will be done is the moment somebody decides to
+make a place for it.  A prompt that refused the name would send them out to
+dired to make it and back here to say so -- and making a directory is a
+change to the disk, so it is asked first."
+  (org-upwell-test--with-dir
+    (let* ((new (expand-file-name "acme/2026-renewal/" dir))
+           (file (org-upwell-test--write-journal
+                  "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n"))
+           (marker (org-upwell-test--marker-at-id file "T1"))
+           asked)
+      (should-not (file-exists-p new))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (q) (setq asked q) t)))
+        (org-upwell--set-working-directory marker new))
+      (should (string-match-p "2026-renewal" (or asked "")))
+      ;; made, parents and all, and written down
+      (should (file-directory-p new))
+      (should (org-with-point-at marker
+                (org-entry-get (point) "UPWELL_DIR")))
+      ;; said no: nothing made, nothing written
+      (let ((other (expand-file-name "not-this-one/" dir)))
+        (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+          (should-error (org-upwell--set-working-directory marker other)
+                        :type 'user-error))
+        (should-not (file-exists-p other))
+        (should (string-match-p "2026-renewal"
+                                (org-with-point-at marker
+                                  (org-entry-get (point) "UPWELL_DIR"))))))))
+
+(ert-deftest org-upwell-test-the-bench-is-a-strip-and-says-how-tall ()
+  "The window it was cut from is the one somebody is actually in, and every
+line here is a line taken from there.  A fraction of the host, or a count of
+lines for a frame-independent answer, with ten as the floor either way."
+  (org-upwell-test--with-dir
+    (let ((file (org-upwell-test--write-journal
+                 "* NEXT Task\n:PROPERTIES:\n:ID: T1\n:END:\n")))
+      (org-upwell--bench-draw
+       (org-upwell-domain (org-upwell-test--marker-at-id file "T1")))
+      (with-current-buffer "*org-upwell*"
+        (cl-letf (((symbol-function 'window-total-height) (lambda (&rest _) 60)))
+          (let ((org-upwell-bench-height 0.25))
+            (should (= 15 (org-upwell--bench-desired-height
+                           (current-buffer) (selected-window)))))
+          (let ((org-upwell-bench-height 12))
+            (should (= 12 (org-upwell--bench-desired-height
+                           (current-buffer) (selected-window)))))
+          ;; the floor holds whichever way it is asked for
+          (let ((org-upwell-bench-height 2))
+            (should (= 10 (org-upwell--bench-desired-height
+                           (current-buffer) (selected-window)))))
+          (let ((org-upwell-bench-height 0.01))
+            (should (= 10 (org-upwell--bench-desired-height
+                           (current-buffer) (selected-window))))))))))
+
 (ert-deftest org-upwell-test-every-door-writes-the-same-property ()
   "Three ways in, one act: whichever is used, the heading carries the same
 property afterwards and every reader of it answers the same way."

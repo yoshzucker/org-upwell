@@ -128,7 +128,7 @@ including ~expand=~ in the org-protocol URL.
 | ~org-upwell-purge~ | Erase the forgotten records whose noes have outlived what they were answering. The only command that takes a record out of the store |
 | ~org-upwell-copy-from~ | Copy every thing another heading holds onto this one, provisionally |
 | ~org-upwell-matrix~ | One family of headings as a grid: rows are things, columns are headings, a cell is a claim |
-| (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. Also the drop target |
+| (the bench itself) | A strip cut out of one window -- the one you did *not* call it from -- the way the agenda splits. ~org-upwell-bench-width~ and ~org-upwell-bench-height~ say how much of it to take; height is a fraction of the host or a count of lines, ten at the least. Also the drop target |
 | ~org-upwell-follow-mode~ | Keep the bench in step with the Org heading at point |
 | ~org-upwell-demo-mode~ | Point the store and the agenda at generated data |
 
@@ -141,7 +141,7 @@ there are any, the line point is on when there are none.
 | ~e~ | Visit inside Emacs, in another window |
 | ~^~ | Go to the directory this row lives in, in the OS file manager, with the row selected. The way out of Emacs, and the same key whether the row is a file or a directory |
 | ~P~ | Record that directory as a thing of its own. Nothing on disk is touched; what appears is a row |
-| ~w~ | Open the directory this heading's work is done in, and say which it is. On a directory row, that row; in dired, the directory shown, and it asks which heading; anywhere else, the directory the heading already names, or one it asks for. Writes ~:UPWELL_DIR:~, which is inherited, and then opens dired on it. The guess is never written |
+| ~w~ | Open the directory this heading's work is done in, and say which it is. On a directory row, that row; in dired, the directory shown, and it asks which heading; anywhere else, the directory the heading already names, or one it asks for. A directory that is not there yet is offered and made, after asking: naming where the work will be done is the moment somebody decides to make a place for it. Writes ~:UPWELL_DIR:~, which is inherited, and then opens dired on it. The guess is never written |
 | ~RET~ / ~^~ /on the header line/ | The same two acts on the line that names it: open it, or go and stand in it. It is not a row -- the row commands all want a record -- but it names a directory, and a listing that names a place you cannot open from it has to be left to be used |
 | ~M~ | Move the file itself into that directory -- the one command here that changes anything on disk. Asks first, and never writes over a name already taken |
 | ~y~ | Copy every thing another heading holds onto this one, provisionally |

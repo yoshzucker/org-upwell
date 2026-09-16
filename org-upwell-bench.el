@@ -79,14 +79,27 @@ with \\[org-upwell-bench-open-all] and not on its own."
   :type 'boolean
   :group 'org-upwell)
 
+(defcustom org-upwell-bench-height 0.25
+  "How tall a bench cut underneath a window may be.
+
+A float is a fraction of the window it was cut from; an integer is that
+many lines whatever the frame does.  Ten lines is the floor either way --
+below that the rows stop being a list and start being a peephole.
+
+A quarter rather than a third, because the listing is read beside the work
+and not instead of it: the window it was cut from is the one somebody is
+actually in, and every line here is a line taken from there."
+  :type '(choice (float :tag "fraction of the host window")
+                 (integer :tag "lines"))
+  :group 'org-upwell)
+
 (defcustom org-upwell-bench-width 0.5
   "Fraction of the host window's width given to the bench, when it
 is cut side by side.
 
-A normal window, not a side window, so the default is half of what
-it was cut from.  Height, when the bench sits underneath, is the
-number of lines in the buffer (capped at a third of the host), not
-a fraction."
+A normal window, not a side window, so the default is half of what it was
+cut from.  Height, when the bench sits underneath, is
+`org-upwell-bench-height\'."
   :type 'float
   :group 'org-upwell)
 
@@ -561,15 +574,23 @@ frame anyway leaves a quarter, a quarter and a half."
 (defun org-upwell--bench-desired-height (buf host)
   "Lines to give a below-split bench for BUF cut out of HOST.
 
-Dense, but not a one-liner: heading, file list, drop hint.  Floor of
-10 so a handful of files is still clickable; cap at a third of HOST
-so it cannot become a second agenda."
+Dense, but not a one-liner: heading, rows, drop hint.  Floor of 10 so a
+handful of them is still clickable; capped by `org-upwell-bench-height\'
+so it cannot become a second agenda.
+
+The foot alone is more than a dozen lines, so the content is almost
+always longer than the cap and the cap is what decides.  That is the way
+round it should be: the foot is a reference, read once, and what the
+window is for is the rows above it."
   (let* ((content (with-current-buffer buf
                     (count-lines (point-min) (point-max))))
-         (total (window-total-height host)))
+         (total (window-total-height host))
+         (cap (if (floatp org-upwell-bench-height)
+                  (round (* org-upwell-bench-height total))
+                org-upwell-bench-height)))
     (min (1- total)
          (max 10 (1+ content))
-         (max 10 (/ total 3)))))
+         (max 10 cap))))
 
 (defun org-upwell--bench-maybe-resize (win buf)
   "If WIN is a below-split bench, fit it to BUF's contents."
@@ -1686,6 +1707,25 @@ undo the tidying."
                (org-with-point-at from (org-get-heading t t t t)))
       n)))
 
+(defun org-upwell--refile-targets-here ()
+  "Return `org-refile-targets\' as they can be used from this buffer.
+
+A nil car in that list means \"the buffer you are in\" -- it is the first
+entry of Org\'s default -- and Org refuses to gather candidates from a
+buffer that is not in Org mode:
+
+  Major mode in refile target buffer \"acme/\" must be `org-mode\'
+
+Which is exactly what asking from dired does, and dired is one of the doors
+this package puts on the question.  Asked from outside Org, the buffer in
+hand is not a heading anybody could mean, so the entry is dropped rather
+than the question refused.  With nothing else configured the agenda files
+are the list: a heading worth naming as a place of work is in them."
+  (if (derived-mode-p 'org-mode)
+      org-refile-targets
+    (or (seq-filter #'car org-refile-targets)
+        '((org-agenda-files :maxlevel . 5)))))
+
 (defun org-upwell--read-any-heading-marker (prompt)
   "Read any heading in the refile targets and return its marker.
 
@@ -1699,7 +1739,8 @@ nothing yet, so it is in none of those.
 Org\'s own refile targets are the list of \"every heading you might mean\",
 already configured, already familiar."
   (require 'org-refile)
-  (let ((target (org-refile-get-location prompt nil t)))
+  (let* ((org-refile-targets (org-upwell--refile-targets-here))
+         (target (org-refile-get-location prompt nil t)))
     (unless target (user-error "org-upwell: no heading chosen"))
     (let ((file (nth 1 target))
           (pos (nth 3 target)))
@@ -1714,10 +1755,23 @@ already configured, already familiar."
 
 The one act behind every door into it.  `:UPWELL_DIR:\' is inherited, so
 writing it on a project answers for every task under it, and it is the same
-property `org-upwell-create\' puts new files in -- one fact, not two."
+property `org-upwell-create\' puts new files in -- one fact, not two.
+
+A directory that is not there yet is offered, because that is the moment
+somebody decides to make a place for the work.  Asked first: making a
+directory is a change to the disk, and this package asks before every one
+of those.  Said no to, nothing is written -- a heading pointing at a place
+that does not exist would be answered by every reader of it."
   (let ((dir (file-name-as-directory (expand-file-name dir))))
-    (unless (file-directory-p dir)
+    (cond
+     ((file-directory-p dir))
+     ;; Something else is there under that name.  Not a question -- no
+     ;; answer to it would make a file into a directory.
+     ((file-exists-p (directory-file-name dir))
       (user-error "org-upwell: %s is not a directory" dir))
+     ((y-or-n-p (format "Make %s? " (abbreviate-file-name dir)))
+      (make-directory dir t))
+     (t (user-error "org-upwell: %s does not exist" dir)))
     (org-with-point-at marker
       (org-back-to-heading t)
       (org-entry-put (point) "UPWELL_DIR" (abbreviate-file-name dir)))
@@ -1798,6 +1852,11 @@ project's home."
     (unless marker (user-error "org-upwell: no heading to say it about"))
     (let ((dir (or dir
                    said
+                   ;; No match required: the answer is often a directory
+                   ;; that does not exist yet.  Saying where the work will be
+                   ;; done is the moment somebody decides to make a place for
+                   ;; it, and a prompt that refused the name would send them
+                   ;; out to dired to make it and back here to say so.
                    (read-directory-name
                     (format "Work on \"%s\" is done in: "
                             (org-with-point-at marker
@@ -1805,8 +1864,7 @@ project's home."
                     (file-name-as-directory
                      (or (car (org-upwell-working-directory
                                (org-upwell-domain marker)))
-                         default-directory))
-                    nil t))))
+                         default-directory))))))
       (unless (equal (file-name-as-directory (expand-file-name dir))
                      (and said (file-name-as-directory (expand-file-name said))))
         (org-upwell--set-working-directory marker dir))
