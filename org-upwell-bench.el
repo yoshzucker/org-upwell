@@ -1815,6 +1815,157 @@ whatever it already says or whatever gets read."
                 (org-upwell--read-heading-marker))
             nil))))
 
+;;;; Every work directory there is
+
+;; `org-upwell-work-directory' answers about one heading: the one under the
+;; cursor, or the one a prompt asks for.  This is the other way round -- the
+;; directories themselves, all of them, with the heading each belongs to on
+;; the same line.  Which half you remember is not something a command can
+;; know: some days it is the project and some days it is the folder, so the
+;; line carries both and either finds it.
+
+(defun org-upwell--outline-label ()
+  "Return the heading at point the way `org-refile' writes it.
+
+Ancestors and all, slash-separated, with whatever `org-refile-use-outline-path'
+asks for at the front.  Read off that setting rather than fixed here, so a
+heading reads the same in this list as in the refile prompt the reader
+already knows -- two spellings of one path is two things to learn."
+  (let ((base (pcase org-refile-use-outline-path
+                ('file (list (and (buffer-file-name (buffer-base-buffer))
+                                  (file-name-nondirectory
+                                   (buffer-file-name (buffer-base-buffer))))))
+                ('title (list (or (org-get-title)
+                                  (and (buffer-file-name (buffer-base-buffer))
+                                       (file-name-nondirectory
+                                        (buffer-file-name
+                                         (buffer-base-buffer)))))))
+                ('full-file-path (list (buffer-file-name (buffer-base-buffer))))
+                ('buffer-name (list (buffer-name (buffer-base-buffer))))
+                (_ nil))))
+    (mapconcat #'identity
+               (delq nil
+                     (append base
+                             (mapcar (lambda (s)
+                                       (replace-regexp-in-string
+                                        "/" "\\/" s nil t))
+                                     (org-get-outline-path t t))))
+               "/")))
+
+(defun org-upwell-work-directories ()
+  "Return (LABEL . DIRECTORY) for every heading that marks a work directory.
+
+Marked, and only marked.  `org-upwell-working-directory' will also guess one
+from where a heading's files happen to be, which is worth offering when the
+question is about that heading -- it says it is guessing, and the reader can
+see the heading it is guessing about.  A list is not that: half of it would
+be rows saying \"probably here\", and a list you have to audit is a list you
+stop trusting.  Pressing \\[org-upwell-work-directory] on a folder is how a
+guess becomes an answer, and this is a list of answers.
+
+The property is read without inheritance, so the heading that carries it is
+the heading offered.  Inherited, every task under a project would be another
+row to the same folder."
+  (let (out)
+    (dolist (file (org-agenda-files))
+      (when (file-exists-p file)
+        (with-current-buffer (find-file-noselect file)
+          (org-with-wide-buffer
+           (goto-char (point-min))
+           (while (re-search-forward "^[ \t]*:UPWELL_DIR:[ \t]*\\(.+\\)$" nil t)
+             (let ((dir (string-trim (match-string 1))))
+               (save-excursion
+                 (when (and (not (string-empty-p dir))
+                            (ignore-errors (org-back-to-heading t))
+                            (equal dir (string-trim
+                                        (or (org-entry-get (point) "UPWELL_DIR")
+                                            ""))))
+                   (push (cons (org-upwell--outline-label)
+                               (directory-file-name (expand-file-name dir)))
+                         out)))))))))
+    (nreverse out)))
+
+(defun org-upwell--work-directory-rows (pairs)
+  "Return PAIRS as one line each: the heading, then the directory.
+
+Both cut from the left when they have to be, because the end of either is
+what tells two of them apart -- the leaf of an outline path and the leaf of
+a folder, for the same reason.  The heading column is as wide as the widest
+heading, up to a point; past that the directory would be pushed off the
+line it is on, and a column nobody can read to the end of is worth less
+than the room it takes."
+  (let* ((head-w (min 60 (apply #'max 1 (mapcar (lambda (p)
+                                                  (string-width (car p)))
+                                                pairs))))
+         (room (max 20 (- (min 120 (max 60 (frame-width))) head-w 2))))
+    (mapcar
+     (lambda (p)
+       (cons (concat (org-upwell--column (org-upwell--tail (car p) head-w) head-w)
+                     "  "
+                     (propertize
+                      (org-upwell--tail
+                       (abbreviate-file-name (file-name-as-directory (cdr p)))
+                       room)
+                      'face 'shadow))
+             (cdr p)))
+     pairs)))
+
+(defvar org-upwell--work-directory-offered nil
+  "What `org-upwell-find-work-directory' is offering, as (LINE . DIRECTORY).
+
+Bound only while it is asking.  A command in the minibuffer -- one that
+hands the answer to `find-file', say -- has the line and wants the folder,
+and reading it back out of a line that has been cut to fit is not something
+that can be done honestly.")
+
+(defun org-upwell-offered-work-directory (line)
+  "Return the directory LINE stands for, or nil.
+
+For whatever is bound in the minibuffer while
+`org-upwell-find-work-directory' is asking.  Exposed rather than left
+private because the answer belongs to whoever is reading the prompt, and
+the useful thing to do with it is usually not what this package does."
+  (cdr (assoc line org-upwell--work-directory-offered)))
+
+(defun org-upwell--work-directory-collection (rows)
+  "Return the completion table offering ROWS.
+
+Its own category, so a reader can say what matching this list should use --
+the same way `org-refile' and `imenu' are named -- and its own order, which
+is the order the headings are written in rather than alphabetical."
+  (lambda (string pred action)
+    (if (eq action 'metadata)
+        '(metadata (category . org-upwell-work-directory)
+                   (display-sort-function . identity)
+                   (cycle-sort-function . identity))
+      (complete-with-action action (mapcar #'car rows) string pred))))
+
+;;;###autoload
+(defun org-upwell-find-work-directory ()
+  "Open one of the marked work directories, chosen by heading or by folder.
+
+Every line carries both, because which half comes to mind is not the same
+on two consecutive days: sometimes the project is what you remember and
+sometimes it is the folder you were last in.  Typing either narrows to it."
+  (interactive)
+  (let ((pairs (org-upwell-work-directories)))
+    (unless pairs
+      (user-error
+       "org-upwell: no heading marks a work directory yet (%s)"
+       (substitute-command-keys "\\[org-upwell-work-directory] marks one")))
+    (let* ((org-upwell--work-directory-offered
+            (org-upwell--work-directory-rows pairs))
+           (line (completing-read
+                  "Work directory: "
+                  (org-upwell--work-directory-collection
+                   org-upwell--work-directory-offered)
+                  nil t))
+           (dir (org-upwell-offered-work-directory line)))
+      (unless dir (user-error "org-upwell: nothing chosen"))
+      (unless (file-directory-p dir)
+        (user-error "org-upwell: %s is gone" (abbreviate-file-name dir)))
+      (dired dir))))
+
 ;;;###autoload
 (defun org-upwell-work-directory ()
   "Open the directory a heading's work is done in, and say which it is.

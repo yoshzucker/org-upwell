@@ -16,6 +16,10 @@
 
 (require 'ert)
 (require 'cl-lib)
+;; Loaded before anything stubs it.  `dired' is an autoload until something
+;; calls it, and a test that replaces the autoload has its replacement
+;; thrown away the moment the real file loads underneath it.
+(require 'dired)
 (require 'org)
 (require 'org-id)
 (require 'org-upwell)
@@ -4348,6 +4352,102 @@ cannot say which of 1 and 11 it is, so the ruler grows a second line."
                                        (string-match-p "1 2 3 4 5 6 7 8 9 0" l)))))
             (should units)
             (should (string-match-p "1 1 1 1" (nth (1- units) lines)))))))))
+
+(ert-deftest org-upwell-test-work-directories-are-the-marked-ones ()
+  "The list is of headings that carry the property, each once.
+
+Marked and not guessed, because a list half of which says \"probably here\"
+is a list that has to be audited, and one that has to be audited is one
+nobody trusts twice.  And carried, not inherited: the property answers for
+every task under a project, so reading it with inheritance would offer the
+same folder once per task beneath it."
+  (org-upwell-test--with-dir
+    (org-upwell-test--write-journal
+     (concat "* Work\n** Acme\n:PROPERTIES:\n:UPWELL_DIR: " org-directory
+             "acme/\n:END:\n"
+             "*** A task under it\n"
+             "*** Invoices\n:PROPERTIES:\n:UPWELL_DIR: " org-directory
+             "acme/invoice/\n:END:\n"
+             "* Nothing marked here\n"
+             ;; Words that look like the property but are not it.  The list
+             ;; is found by reading the files, so what it finds has to be
+             ;; asked whether it is really the heading\'s property -- a line
+             ;; in an example block says nothing about where work is done.
+             "* Notes about the property\n"
+             "#+begin_example\n:UPWELL_DIR: " org-directory
+             "not-a-real-one/\n#+end_example\n"))
+    (let* ((org-refile-use-outline-path 'file)
+           (pairs (org-upwell-work-directories)))
+      ;; the two that carry one, and none of: the task that merely inherits
+      ;; it, the heading that marks nothing, the prose that mentions it
+      (should (equal '("journal.org/Work/Acme" "journal.org/Work/Acme/Invoices")
+                     (mapcar #'car pairs)))
+      (should (equal (list (directory-file-name (expand-file-name
+                                                 (concat org-directory "acme")))
+                           (directory-file-name (expand-file-name
+                                                 (concat org-directory
+                                                         "acme/invoice"))))
+                     (mapcar #'cdr pairs))))))
+
+(ert-deftest org-upwell-test-a-work-directory-line-carries-both-halves ()
+  "One line, the heading and the folder, and either finds it.
+
+Which half comes to mind is not the same on two consecutive days, so the
+line has to hold both -- and both are cut from the left when they have to
+be, because the end is what tells two of them apart: the leaf of an outline
+path and the leaf of a folder, for one reason."
+  (let* ((pairs '(("a/very/long/outline/path/that/goes/on/and/on/past/any/reasonable/width"
+                   . "/home/someone/Documents/projects/acme")
+                  ("short" . "/home/someone/tax")))
+         (rows (org-upwell--work-directory-rows pairs))
+         (lines (mapcar (lambda (r) (substring-no-properties (car r))) rows)))
+    ;; the long one is cut, and what survives is its end
+    (should (string-match-p "past/any/reasonable/width" (nth 0 lines)))
+    (should (string-prefix-p "…" (nth 0 lines)))
+    ;; both lines start their folder in the same column
+    (let ((at (lambda (l)
+                (- (string-width l)
+                   (string-width (car (last (split-string l "  +" t))))))))
+      (should (= (funcall at (nth 0 lines)) (funcall at (nth 1 lines)))))
+    ;; and the folder each line stands for is answerable from the line
+    (let ((org-upwell--work-directory-offered rows))
+      (should (equal "/home/someone/tax"
+                     (org-upwell-offered-work-directory (nth 1 lines))))
+      (should-not (org-upwell-offered-work-directory "not a line here")))))
+
+(ert-deftest org-upwell-test-finding-a-work-directory-opens-it ()
+  "Choosing a line opens that folder in dired, and a folder that has gone
+says so rather than opening something else.
+
+The whole command: the answer is a place to stand, and standing in it is
+what the reader asked for."
+  (org-upwell-test--with-dir
+    (make-directory (expand-file-name "acme" org-directory))
+    (make-directory (expand-file-name "tax" org-directory))
+    (org-upwell-test--write-journal
+     (concat "* Work\n** Acme\n:PROPERTIES:\n:UPWELL_DIR: " org-directory
+             "acme/\n:END:\n"
+             "* Home\n** Tax\n:PROPERTIES:\n:UPWELL_DIR: " org-directory
+             "tax/\n:END:\n"))
+    (let ((org-refile-use-outline-path 'file)
+          (opened nil))
+      ;; the second one, so that answering with the first would be an
+      ;; answer to a question nobody asked
+      (cl-letf (((symbol-function 'dired) (lambda (d &rest _) (setq opened d)))
+                ((symbol-function 'completing-read)
+                 (lambda (_prompt coll &rest _)
+                   (nth 1 (all-completions "" coll)))))
+        (org-upwell-find-work-directory))
+      (should (equal (directory-file-name
+                      (expand-file-name (concat org-directory "tax")))
+                     opened)))
+    ;; nothing marked at all: said, not an empty prompt.  Its own scratch
+    ;; dir, because the file written above is open and the list is read from
+    ;; the buffers -- which is right, and makes rewriting the file underneath
+    ;; one a poor way to ask a second question.
+    (org-upwell-test--with-dir
+      (org-upwell-test--write-journal "* Work\n** Acme\n")
+      (should-error (org-upwell-find-work-directory) :type 'user-error))))
 
 (provide 'org-upwell-test)
 
